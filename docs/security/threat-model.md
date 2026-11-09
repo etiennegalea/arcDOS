@@ -2,13 +2,15 @@
 
 ## Default exposure
 
-The Axum process serves the bundled static status page and an unauthenticated health RPC. It accepts no credentials, exposes no user storage, and defaults to a loopback listener for local development. The Docker image runs as a numeric non-root user. The documented port mapping binds to loopback on the Docker host.
+The Axum process serves the bundled status page, file workspace shell, and public health RPC by default. It binds to loopback by default for native development. The Docker image runs as a numeric non-root user, and the documented port mapping binds to loopback on the Docker host.
 
 The browser uses the same origin as the API. Build outputs are public to clients that can reach the application. Store application state and secrets outside the static asset directory.
 
-## Opt-in M2 file API
+## Opt-in Linux file API
 
 Set a private data directory and a separate token file to enable file operations on Linux. The development token gates metadata, mutations, the change journal, uploads, and downloads. Serve this development instance on loopback with synthetic data. M4 replaces the development token with Authentik identity and role authorization.
+
+The file workspace keeps the development token in page memory. The media worker handles only preview URLs and requests ranges through the tab that owns the preview. Preview reads are bounded when using in-memory buffers. Text and code render as escaped text, and the PDF viewer receives a validated PDF blob.
 
 The filesystem engine validates names, resolves paths relative to opened roots, and excludes symlinks, hardlinked regular files, special files, and nested mounts. The catalog and transfer directories are private to the server. All writable storage belongs on a single dedicated mount. Host processes with direct write access to that mount are trusted. In particular, a local writer can change a file during streaming or move a parent directory after the server has opened it.
 

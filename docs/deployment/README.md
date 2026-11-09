@@ -43,4 +43,4 @@ docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   arcdos:local
 ```
 
-The process initializes `files/` and private `state/` beneath the data root. Keep that directory away from the web assets and give it to one ArcDOS server process. Use the token in the `Authorization` header when testing [the file API](../api/files-v1.md).
+The process initializes `files/` and private `state/` beneath the data root. Keep that directory away from the web assets and give it to one ArcDOS server process. Open [the file manager](http://127.0.0.1:8081/files/) and enter the token from `"$test_dir/token"`. For direct API calls, send the token in the `Authorization` header. [File manager guide](../file-manager.md) · [File API](../api/files-v1.md)

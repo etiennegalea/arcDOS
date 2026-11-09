@@ -12,6 +12,8 @@ jobs:
   foundation:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      ARCDOS_E2E_DEV_TOKEN: arcdos-browser-fixture-token-0000000000000000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,8 +61,15 @@ jobs:
         run: docker build -f deploy/Dockerfile.server -t arcdos:ci .
       - name: Start the container
         run: |
+          mkdir "$RUNNER_TEMP/arcdos-data"
+          sudo chown 10001:10001 "$RUNNER_TEMP/arcdos-data"
+          printf '%s\n' "$ARCDOS_E2E_DEV_TOKEN" > "$RUNNER_TEMP/arcdos-token"
+          chmod 0444 "$RUNNER_TEMP/arcdos-token"
           docker run --detach --name arcdos-ci --read-only --cap-drop=ALL \
-            --security-opt=no-new-privileges --publish 127.0.0.1:8080:8080 arcdos:ci
+            --security-opt=no-new-privileges --publish 127.0.0.1:8080:8080 \
+            --mount "type=bind,source=$RUNNER_TEMP/arcdos-data,target=/data" \
+            --mount "type=bind,source=$RUNNER_TEMP/arcdos-token,target=/run/arcdos-token,readonly" \
+            -e ARCDOS_DATA_DIR=/data -e ARCDOS_DEV_TOKEN_FILE=/run/arcdos-token arcdos:ci
           for attempt in {1..30}; do
             if [[ "$(docker inspect --format '{{.State.Health.Status}}' arcdos-ci)" == healthy ]]; then
               exit 0
@@ -69,7 +78,7 @@ jobs:
           done
           docker inspect --format '{{json .State.Health}}' arcdos-ci
           exit 1
-      - name: Exercise browser-to-server binary RPC
+      - name: Exercise the browser file manager and binary RPC
         working-directory: apps/web
         env:
           ARCDOS_E2E_URL: http://127.0.0.1:8080

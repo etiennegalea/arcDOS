@@ -1,6 +1,6 @@
 # ArcDOS
 
-ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem, with planned local AI indexing inspired by FilDOS. The status page verifies the connection from SvelteKit to Axum through binary Connect RPC. The Linux M2 backend adds opt-in file operations and resumable transfers.
+ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem, with planned local AI indexing inspired by FilDOS. The web workspace supports browsing, previews, file operations, and resumable transfers through the Linux file API.
 
 ## Run locally
 
@@ -32,6 +32,6 @@ Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). Run `docker compose down`
 
 The `crates/server` crate implements the service and serves the built frontend in `apps/web`. The `crates/protocol` crate and the generated browser bindings come from `proto/`. Start with [the architecture overview](docs/architecture/overview.md) and [the development guide](docs/development.md) for checks, binding generation, and browser tests.
 
-The default instance serves the status page and public health check. For file operations, see the [M2 local setup](docs/deployment/README.md#enable-the-linux-file-api) and [file API](docs/api/files-v1.md). Authentik, the file manager UI, search, AI, and device synchronization are tracked in [the roadmap](docs/roadmap.md).
+The default instance serves the status page and public health check. Enable the Linux file API and follow **Open file manager** to browse the shared filesystem. Enter the development token in the workspace when prompted. Authentik, search, AI, and device synchronization are tracked in the roadmap. [Local file API setup](docs/deployment/README.md#enable-the-linux-file-api) · [File manager guide](docs/file-manager.md) · [Roadmap](docs/roadmap.md)
 
 ArcDOS is licensed under [MIT](LICENSE).

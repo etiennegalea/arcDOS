@@ -37,3 +37,11 @@ Use Linux directory capabilities and `openat2` with beneath, no-symlink, no-magi
 Write a SQLite intent before each rename and synchronize the affected directories before committing the catalog and journal update. On startup, compare the saved identity with the source and destination to finalize a completed rename or clear an unexecuted intent. If neither location matches, fail closed so an operator can inspect the storage.
 
 Serialize catalog mutations in one server process. Use file identity and metadata for revisions and detect changes observed on the next read. A local process with write access to the same mount can still change open file contents or move directory handles. Use a dedicated writable mount and restrict direct access during mutation and streaming.
+
+## ADR 006 · Keep the file workspace static and page directory data
+
+**Status** Accepted
+
+Serve a prerendered `/files/` shell. Store folder identity and the active collection in the URL so browser history and direct links work without a dynamic server route. Load data through the existing Connect clients and use a virtual window for list and grid rendering. The server remains the source of truth for mutation revisions and cursor order.
+
+Keep the development token in page memory. A scoped service worker relays audio and video range requests through the tab that owns the preview. The tab performs the authenticated fetch and transfers its response stream. The worker serves no other routes and stores neither credentials nor file bytes.

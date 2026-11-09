@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import { checkHealth } from '../lib/health';
 
@@ -56,7 +57,10 @@
       </div>
       <p>{messages[health].detail}</p>
     </div>
-    <button type="button" onclick={refreshHealth} disabled={health === 'checking'}>Check again</button>
+    <div class="actions">
+      <button type="button" onclick={refreshHealth} disabled={health === 'checking'}>Check again</button>
+      <a href={resolve('files/')} data-sveltekit-reload>Open file manager <span aria-hidden="true">→</span></a>
+    </div>
   </section>
 </main>
 
@@ -155,5 +159,18 @@
   button:focus-visible {
     outline: 2px solid #1d4537;
     outline-offset: 3px;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .actions a {
+    color: #1d4537;
+    font-weight: 650;
+    text-underline-offset: 0.2em;
   }
 </style>
