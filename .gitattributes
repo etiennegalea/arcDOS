@@ -1,0 +1,2 @@
+* text=auto eol=lf
+apps/web/src/lib/gen/** whitespace=-blank-at-eof

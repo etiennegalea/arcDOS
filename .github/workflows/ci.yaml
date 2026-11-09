@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web --no-audit --no-fund
+      - name: Install pinned Protobuf tools
+        run: |
+          bash scripts/install-codegen.sh
+          echo "$PWD/.local-tools/bin" >> "$GITHUB_PATH"
+      - name: Check the API schema and generated code
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          buf format --diff --exit-code
+          buf lint
+          if git cat-file -e "${BASE_SHA}:buf.yaml" 2>/dev/null; then
+            buf breaking --against ".git#ref=${BASE_SHA}"
+          else
+            echo "No API schema in the baseline commit"
+          fi
+          buf generate
+          generated_changes=$(git status --porcelain -- crates/protocol apps/web/src/lib/gen)
+          if [[ -n "$generated_changes" ]]; then
+            printf 'Generated bindings are out of date:\n%s\n' "$generated_changes"
+            exit 1
+          fi
+      - name: Check Rust
+        run: |
+          rustup show
+          cargo fmt --all -- --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+      - name: Check the web client
+        working-directory: apps/web
+        run: |
+          npm run lint
+          npm run check
+      - name: Build the Linux container
+        run: docker build -f deploy/Dockerfile.server -t arcdos:ci .
+      - name: Start the container
+        run: |
+          docker run --detach --name arcdos-ci --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --publish 127.0.0.1:8080:8080 arcdos:ci
+          for attempt in {1..30}; do
+            if [[ "$(docker inspect --format '{{.State.Health.Status}}' arcdos-ci)" == healthy ]]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker inspect --format '{{json .State.Health}}' arcdos-ci
+          exit 1
+      - name: Exercise browser-to-server binary RPC
+        working-directory: apps/web
+        env:
+          ARCDOS_E2E_URL: http://127.0.0.1:8080
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Show container logs
+        if: failure()
+        run: docker logs arcdos-ci 2>/dev/null || true
+      - name: Remove test container
+        if: always()
+        run: docker rm --force arcdos-ci >/dev/null 2>&1 || true

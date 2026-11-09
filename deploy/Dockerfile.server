@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS web
+WORKDIR /src/apps/web
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY apps/web/ ./
+RUN npm run build
+
+FROM rust:1.99.1-bookworm@sha256:e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c AS server
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+RUN cargo build --locked --release --bin arcdos-server
+
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=server /src/target/release/arcdos-server /usr/local/bin/arcdos-server
+COPY --from=web /src/apps/web/build /opt/arcdos/web
+COPY LICENSE /opt/arcdos/LICENSE
+ENV ARCDOS_BIND=0.0.0.0:8080 \
+    ARCDOS_WEB_DIR=/opt/arcdos/web
+USER 10001:10001
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
+    CMD curl --fail --silent --show-error --max-time 2 \
+        --header 'Content-Type: application/json' --header 'Connect-Protocol-Version: 1' \
+        --data '{}' http://127.0.0.1:8080/arcdos.account.v1.HealthService/Check > /dev/null
+ENTRYPOINT ["/usr/local/bin/arcdos-server"]

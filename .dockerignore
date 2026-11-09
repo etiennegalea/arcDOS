@@ -1,0 +1,11 @@
+.git
+.local-tools
+target
+gen
+apps/web/.svelte-kit
+apps/web/build
+apps/web/node_modules
+apps/web/playwright-report
+apps/web/test-results
+**/.env
+**/.env.*

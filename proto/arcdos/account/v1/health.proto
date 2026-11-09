@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package arcdos.account.v1;
+
+option java_multiple_files = true;
+option java_package = "io.arcdos.account.v1";
+
+// HealthService reports whether the ArcDOS API is ready to handle requests.
+service HealthService {
+  // Check returns public readiness without exposing configuration or storage state.
+  rpc Check(CheckRequest) returns (CheckResponse) {}
+}
+
+// CheckRequest has no required input.
+message CheckRequest {}
+
+// CheckResponse carries the server's readiness state.
+message CheckResponse {
+  // True when the API is ready to handle requests.
+  bool ready = 1;
+}
