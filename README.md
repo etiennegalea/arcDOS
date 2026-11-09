@@ -1,6 +1,6 @@
 # ArcDOS
 
-ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem, with planned local AI indexing inspired by FilDOS. This repository currently implements M1. The status page verifies the connection from the SvelteKit browser client to the Rust Axum server through Connect RPC and binary Protobuf.
+ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem, with planned local AI indexing inspired by FilDOS. The status page verifies the connection from SvelteKit to Axum through binary Connect RPC. The Linux M2 backend adds opt-in file operations and resumable transfers.
 
 ## Run locally
 
@@ -20,19 +20,18 @@ Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/) and check that the API rep
 | `ARCDOS_WEB_DIR` | `apps/web/build` | Directory containing the static web build |
 | `ARCDOS_API_ORIGIN` | `http://127.0.0.1:8080` | Vite development proxy target |
 
-## Run with Docker
+## Run with Docker Compose
 
 ```sh
-docker build -f deploy/Dockerfile.server -t arcdos:local .
-docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges -p 127.0.0.1:8080:8080 arcdos:local
+docker compose up --build --wait
 ```
 
-The image runs as a non-root user and checks the health RPC. See [the deployment guide](docs/deployment/README.md) for the container settings.
+Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). Run `docker compose down` to stop and remove the container. See [the deployment guide](docs/deployment/README.md) for port configuration and management commands.
 
 ## Development
 
 The `crates/server` crate implements the service and serves the built frontend in `apps/web`. The `crates/protocol` crate and the generated browser bindings come from `proto/`. Start with [the architecture overview](docs/architecture/overview.md) and [the development guide](docs/development.md) for checks, binding generation, and browser tests.
 
-M1 exposes the status page and a public health check for local development. File storage, Authentik authorization, search, AI inference, and device synchronization are tracked in [the roadmap](docs/roadmap.md). Authentik setup will ship with M4.
+The default instance serves the status page and public health check. For file operations, see the [M2 local setup](docs/deployment/README.md#enable-the-linux-file-api) and [file API](docs/api/files-v1.md). Authentik, the file manager UI, search, AI, and device synchronization are tracked in [the roadmap](docs/roadmap.md).
 
 ArcDOS is licensed under [MIT](LICENSE).

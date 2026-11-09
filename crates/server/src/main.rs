@@ -14,11 +14,31 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let web_dir = env::var_os("ARCDOS_WEB_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("apps/web/build"));
+    let app = match (
+        env::var_os("ARCDOS_DATA_DIR"),
+        env::var_os("ARCDOS_DEV_TOKEN_FILE"),
+    ) {
+        (None, None) => arcdos_server::app(&web_dir),
+        #[cfg(target_os = "linux")]
+        (Some(data), Some(token)) => arcdos_server::app_with_files(
+            &web_dir,
+            std::path::Path::new(&data),
+            std::path::Path::new(&token),
+        )?,
+        #[cfg(not(target_os = "linux"))]
+        (Some(_), Some(_)) => return Err(io::Error::other("the file API requires Linux").into()),
+        _ => {
+            return Err(io::Error::other(
+                "ARCDOS_DATA_DIR and ARCDOS_DEV_TOKEN_FILE must be set together",
+            )
+            .into());
+        }
+    };
     let listener = TcpListener::bind(bind).await?;
     let shutdown = shutdown_signal()?;
 
     tracing::info!(address = %listener.local_addr()?, "ArcDOS listening");
-    axum::serve(listener, arcdos_server::app(&web_dir))
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())

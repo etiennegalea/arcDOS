@@ -1,19 +1,46 @@
 # Deployment
 
-The M1 image is a development build for Linux containers. Build and run it from the repository root.
+The development image runs in Linux containers. Build and run it with Docker Compose from the repository root.
 
 ```sh
+docker compose up --build --wait
+```
+
+Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). Compose publishes the server on the host's loopback interface. Set `ARCDOS_HOST_PORT` in your shell or a root `.env` file to change the host port. The server listens on port 8080 inside the container.
+
+The image runs as UID and GID 10001 and checks the Connect health RPC. Compose runs it with a read-only root filesystem and restarts it after failures or daemon restarts unless it was manually stopped.
+
+| Command | Effect |
+| --- | --- |
+| `docker compose ps` | Check status and health |
+| `docker compose logs -f server` | Follow server logs |
+| `docker compose stop` | Stop the container and keep it for later |
+| `docker compose start` | Start a stopped container |
+| `docker compose down` | Stop and remove the container and its Compose network |
+
+The status service requires no volumes or secrets. Proxmox, Traefik, Authentik, and backup setup will accompany the milestones that add those capabilities.
+
+## Enable the Linux file API
+
+Use a private test instance until Authentik is available. Linux 5.6 or newer with procfs and a local filesystem supporting directory synchronization and atomic no-replace rename is required. Mount one writable directory at `/data` so `/data/files` and `/data/state` share a mount. Use a separate read-only token file.
+
+For a synthetic test on a Linux Docker host, run from the repository root.
+
+```sh
+test_dir="$(mktemp -d)"
+sudo install -d -o 10001 -g 10001 -m 0750 "$test_dir/data"
+openssl rand -hex 32 > "$test_dir/token"
+sudo chown 10001:10001 "$test_dir/token"
+sudo chmod 0600 "$test_dir/token"
+
 docker build -f deploy/Dockerfile.server -t arcdos:local .
-docker run --rm --name arcdos-local --read-only --cap-drop=ALL --security-opt=no-new-privileges -p 127.0.0.1:8080:8080 arcdos:local
+docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  -p 127.0.0.1:8081:8080 \
+  --mount "type=bind,source=$test_dir/data,target=/data" \
+  --mount "type=bind,source=$test_dir/token,target=/run/arcdos-dev-token,readonly" \
+  -e ARCDOS_DATA_DIR=/data \
+  -e ARCDOS_DEV_TOKEN_FILE=/run/arcdos-dev-token \
+  arcdos:local
 ```
 
-Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The image bundles the static frontend at `/opt/arcdos/web` and runs the server as UID and GID 10001. The server listens on port 8080 inside the container. Docker forwards it to loopback on the host. The health check calls the Connect endpoint over the container's loopback interface.
-
-In another terminal, inspect health or view logs.
-
-```sh
-docker inspect --format '{{.State.Health.Status}}' arcdos-local
-docker logs arcdos-local
-```
-
-The status service requires no volumes or secrets. The Proxmox, Compose, Traefik, Authentik, and backup guides will accompany the milestones that add those capabilities.
+The process initializes `files/` and private `state/` beneath the data root. Keep that directory away from the web assets and give it to one ArcDOS server process. Use the token in the `Authorization` header when testing [the file API](../api/files-v1.md).

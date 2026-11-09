@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 buffa.workspace = true
+buffa-types.workspace = true
 connectrpc.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 

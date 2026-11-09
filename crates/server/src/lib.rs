@@ -9,6 +9,19 @@ use arcdos_protocol::{
 use connectrpc::{Limits, RequestContext, Response, ServiceRequest, ServiceResult};
 use tower_http::services::ServeDir;
 
+#[cfg(target_os = "linux")]
+mod files;
+
+/// Enable the Linux file and transfer routes with a separate local development token.
+#[cfg(target_os = "linux")]
+pub fn app_with_files(
+    web_dir: &Path,
+    data_dir: &Path,
+    token_file: &Path,
+) -> Result<axum::Router, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(app(web_dir).merge(files::router(web_dir, data_dir, token_file)?))
+}
+
 /// Mount the Connect API and serve the static SvelteKit build from the same origin.
 pub fn app(web_dir: &Path) -> axum::Router {
     let procedure = HEALTH_SERVICE_CHECK_SPEC.procedure;

@@ -15,6 +15,8 @@ flowchart LR
 
 The Rust server serves both the static site and RPC from one origin. A browser calls the generated service from JavaScript after the page loads. The Kotlin output gives the future Android client the same protocol without adding an Android application to M1.
 
-Later milestones give the Rust server exclusive responsibility for remote filesystem access, identity and authorization, metadata, transfers, and synchronization. The server will use the Linux filesystem as the source of truth. SQLite WAL and FTS5 will hold metadata, change history, and keyword indexes.
+The M2 Linux file API uses the filesystem as the source of truth. A private SQLite WAL catalog maps relative locations to opaque IDs, records mutation intents, and assigns durable change sequence numbers. Connect handles structured operations. Separate HTTP routes stream uploads and downloads.
+
+Later milestones add Authentik identity and authorization, indexed metadata and FTS5, and device synchronization.
 
 The AI worker will deploy independently and receive bounded inference and extraction jobs. Its availability must have no effect on authentication, file operations, basic search, or sync. Model output can propose file changes for user approval. The server owns validation, execution, and auditing.

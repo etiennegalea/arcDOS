@@ -27,3 +27,13 @@ Use a Linux filesystem as the source of truth and keep searchable metadata and c
 **Status** Accepted
 
 Vite 8.3.7 pulls in Rolldown 1.2.18. The Linux x86-64 binding for that release exits with an illegal instruction on the Sandy Bridge development host. The same host loads Rolldown 1.2.16 successfully. Pin Vite 8.3.6 with an explicit Rolldown 1.2.16 override so lockfile updates preserve the working pair. [Vite 8.3.7 release](https://github.com/vitejs/vite/releases/tag/v8.3.7)
+
+## ADR 005 · Confine files and journal atomic renames
+
+**Status** Accepted
+
+Use Linux directory capabilities and `openat2` with beneath, no-symlink, no-magic-link, and no-mount-crossing resolution. Open regular singly linked files before streaming them. Use a dedicated Linux data mount containing both `files/` and private `state/` so staged data, trash, and live files can move atomically with `renameat2(RENAME_NOREPLACE)`. Cross-mount renames fail without copying or deleting the source. [Linux openat2](https://man7.org/linux/man-pages/man2/openat2.2.html)
+
+Write a SQLite intent before each rename and synchronize the affected directories before committing the catalog and journal update. On startup, compare the saved identity with the source and destination to finalize a completed rename or clear an unexecuted intent. If neither location matches, fail closed so an operator can inspect the storage.
+
+Serialize catalog mutations in one server process. Use file identity and metadata for revisions and detect changes observed on the next read. A local process with write access to the same mount can still change open file contents or move directory handles. Use a dedicated writable mount and restrict direct access during mutation and streaming.
