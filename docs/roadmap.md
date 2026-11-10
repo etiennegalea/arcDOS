@@ -22,6 +22,7 @@ Exit when the essential operations pass backend-only tests for symlink races, Un
 - Add upload progress, file previews, recent files, favorites, and trash management.
 - Virtualize the list and use cursor pagination, cancellable requests, cached thumbnails, and subscriptions.
 
+UI should be similar to the FilDOS implementation.
 Exit when essential file operations work in desktop and mobile layouts and a 100,000-entry directory renders only the visible window and overscan.
 
 ## M4 · Authentik
