@@ -56,6 +56,10 @@ pub struct Snapshot<I> {
 }
 
 impl<I: VectorIndex> Snapshot<I> {
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<Match>> {
         self.index
             .search(query, limit)?
@@ -186,9 +190,45 @@ impl EmbeddingStore {
         Ok(())
     }
 
+    /// Return the source revision of a previously embedded file for this model.
+    pub fn file_revision(&self, model: &Model, file_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .0
+            .prepare_cached(
+                "SELECT revision FROM embeddings
+                 WHERE model_id=?1 AND model_version=?2 AND file_id=?3 LIMIT 1",
+            )?
+            .query_row(params![model.id, model.version, file_id], |row| row.get(0))
+            .optional()?)
+    }
+
+    /// Page the distinct source IDs for reconciliation with the file catalog.
+    pub fn file_ids_after(&self, after: &str, limit: usize) -> Result<Vec<String>> {
+        if !(1..=1000).contains(&limit) {
+            return Err(Error::Invalid("file page limit must be between 1 and 1000"));
+        }
+        let mut query = self.0.prepare_cached(
+            "SELECT DISTINCT file_id FROM embeddings WHERE file_id>?1 ORDER BY file_id LIMIT ?2",
+        )?;
+        Ok(query
+            .query_map(params![after, limit as i64], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Build a new index and its source mapping from one consistent database snapshot.
     /// A consumer checks each result's source revision against the live file catalog.
-    pub fn rebuild<I: VectorIndex>(&mut self, model: &Model, mut index: I) -> Result<Snapshot<I>> {
+    pub fn rebuild<I: VectorIndex>(&mut self, model: &Model, index: I) -> Result<Snapshot<I>> {
+        self.rebuild_bounded(model, index, i64::MAX as usize)?
+            .ok_or(Error::Inconsistent)
+    }
+
+    /// Return no snapshot if the model has more records than the supplied limit.
+    pub fn rebuild_bounded<I: VectorIndex>(
+        &mut self,
+        model: &Model,
+        mut index: I,
+        limit: usize,
+    ) -> Result<Option<Snapshot<I>>> {
         if !index.is_empty() || index.dimensions() != model.dimensions {
             return Err(Error::Invalid(
                 "rebuild requires an empty index with matching dimensions",
@@ -196,6 +236,20 @@ impl EmbeddingStore {
         }
         let tx = self.0.transaction()?;
         check_model(&tx, model)?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        if limit < i64::MAX {
+            let exceeds_limit = tx
+                .query_row(
+                    "SELECT 1 FROM embeddings WHERE model_id=?1 AND model_version=?2 LIMIT 1 OFFSET ?3",
+                    params![model.id, model.version, limit],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if exceeds_limit {
+                return Ok(None);
+            }
+        }
         let mut sources = HashMap::new();
         {
             let mut select = tx.prepare(
@@ -230,7 +284,7 @@ impl EmbeddingStore {
             }
         }
         tx.commit()?;
-        Ok(Snapshot { index, sources })
+        Ok(Some(Snapshot { index, sources }))
     }
 }
 

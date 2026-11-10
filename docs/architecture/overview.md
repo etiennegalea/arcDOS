@@ -23,4 +23,6 @@ M4 adds Authentik authorization code flow with PKCE and server-side browser sess
 
 M5 extends the private SQLite catalog with observed revisions, file tags, durable index jobs, and an FTS5 keyword index. Filesystem notifications prioritize changed paths, while startup and periodic reconciliation discover missed changes. The indexer reads text through the confined filesystem root and search rechecks each hit's current revision before returning it. A separate vector crate stores versioned embeddings and can reconstruct an index for future semantic search. [Keyword search and indexing](../api/search-v1.md) · [Vector index evaluation](vector-index.md)
 
-The AI worker will deploy independently and receive bounded inference and extraction jobs. Its availability must have no effect on authentication, file operations, basic search, or sync. Model output can propose file changes for user approval. The server owns validation, execution, and auditing.
+M6 starts with an optional local ONNX worker on a private network. It embeds bounded batches of indexed text without access to the shared filesystem. The server fuses keyword and semantic results after validating their file revisions, and falls back to keyword results when the worker is unavailable. [FilDOS implementation and licensing review](fildos-review.md) · [Local AI setup](../deployment/local-ai.md)
+
+Future inference can propose file changes for user approval. The server owns validation, execution, and auditing.

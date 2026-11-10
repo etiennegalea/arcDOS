@@ -47,6 +47,8 @@ Exit when keyword search works independently of AI and indexes recover after cra
 - Deploy an independently restartable, resource-limited worker using ONNX Runtime and llama.cpp. Start with document extraction, embeddings, hybrid search, and streaming chat with citations.
 - Validate and audit proposed file changes after explicit user confirmation. Extend indexing to OCR and photos, with a separate face subsystem. Add file relationship visualization.
 
+The first increment covers the FilDOS review, local ONNX embeddings for indexed UTF-8 documents, and hybrid search with keyword fallback. [FilDOS review](architecture/fildos-review.md) · [Worker setup](deployment/local-ai.md)
+
 Exit when local document search and chat work without paid APIs and file operations remain available during inference and worker outages.
 
 ## M7 · Docker and Proxmox

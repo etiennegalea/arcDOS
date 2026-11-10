@@ -1,6 +1,6 @@
 # Vector index evaluation
 
-`arcdos-vector` owns durable embeddings and cosine retrieval. The `VectorIndex` interface supports an exhaustive Rust implementation and an optional USearch implementation. The file server has no dependency on the vector crate. M6 will supply embeddings from the independent inference worker and decide how to refresh and publish snapshots. [USearch Rust API](https://docs.rs/usearch/latest/usearch/)
+`arcdos-vector` owns durable embeddings and cosine retrieval. The `VectorIndex` interface supports an exhaustive Rust implementation and an optional USearch implementation. The M6 file server uses the exact index when local embeddings are enabled. A background task builds snapshots from the private embedding database. [Local AI setup](../deployment/local-ai.md) · [USearch Rust API](https://docs.rs/usearch/latest/usearch/)
 
 `EmbeddingStore` keeps model IDs, model versions, dimensions, opaque file IDs, source revisions, chunk positions, SHA-256 content hashes, and little-endian `f32` embeddings in a versioned SQLite database. Place it in the private state directory on local storage that supports WAL. A transaction replaces all chunks for one file and model version together. A rebuild reads one consistent database snapshot into a fresh index and binds its numeric keys to the stored chunk identities. File IDs and revisions let a consumer validate a result against the live catalog before exposing it. [SQLite WAL](https://www.sqlite.org/wal.html)
 

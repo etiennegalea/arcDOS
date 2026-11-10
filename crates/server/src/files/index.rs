@@ -272,7 +272,7 @@ pub(super) fn write(conn: &Connection, job: &Job, document: Document) -> Result<
     Ok(())
 }
 
-pub(super) fn candidates(conn: &Connection, query: &str, count: usize) -> Result<Vec<Job>> {
+pub(super) fn search_expression(query: &str) -> Result<String> {
     if query.chars().take(MAX_QUERY_CHARS + 1).count() > MAX_QUERY_CHARS {
         return Err(Error::Invalid("search query is too long"));
     }
@@ -296,6 +296,10 @@ pub(super) fn candidates(conn: &Connection, query: &str, count: usize) -> Result
     if terms.next().is_some() {
         return Err(Error::Invalid("search query has too many terms"));
     }
+    Ok(expression)
+}
+
+pub(super) fn candidates(conn: &Connection, expression: &str, count: usize) -> Result<Vec<Job>> {
     if expression.is_empty() {
         return Ok(Vec::new());
     }

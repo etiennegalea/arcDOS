@@ -6,7 +6,9 @@ Use the generated `arcdos.search.v1.SearchService` client. Search and tag reques
 - Each hit contains the normal file `Entry` with its opaque ID and revision, its display path, and its current tags. Search covers live files and folders. Trashed entries and obsolete revisions are omitted.
 - `SetTags` replaces all tags for a live entry. Pass the current file revision to guard against editing a changed file, and send an empty list to clear the tags. ArcDOS trims, sorts, and deduplicates up to 24 labels of 48 characters each. When two requests replace tags on the same file revision, the last successful replacement wins.
 
-Search indexes metadata for all supported entries. It also indexes validated UTF-8 text and source files of up to 256 KiB and stores a SHA-256 hash of the extracted bytes. Larger text files and binary formats remain searchable by metadata. Document extraction, OCR, and semantic search are later capabilities.
+Search indexes metadata for all supported entries. It also indexes validated UTF-8 text and source files of up to 256 KiB and stores a SHA-256 hash of the extracted bytes. Larger text files and binary formats remain searchable by metadata.
+
+If the operator enables local AI, `SearchFiles` blends keyword matches with semantic matches from indexed UTF-8 text. The worker embeds up to eight chunks of up to 1,024 characters from the start of each file, with tokenizer truncation at 256 tokens per chunk. A semantic hit can match even if the query terms are absent from the file. New or changed files gain semantic coverage as background indexing catches up. Search returns keyword results when the worker is busy, unavailable, or exceeds its one-second search budget. It also falls back to keyword search if the estimated semantic snapshot exceeds 32 MiB, equivalent to 16,384 chunks with the default model. [Local AI setup](../deployment/local-ai.md)
 
 ## Reconciliation and recovery
 

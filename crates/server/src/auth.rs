@@ -535,7 +535,13 @@ fn origin_allowed(headers: &HeaderMap, origin: &str, required: bool) -> bool {
     }
 }
 
-fn read_secret(web: &Path, data: &Path, file: &Path, min: usize, max: usize) -> io::Result<String> {
+pub(super) fn read_secret(
+    web: &Path,
+    data: &Path,
+    file: &Path,
+    min: usize,
+    max: usize,
+) -> io::Result<String> {
     let canonical = file.canonicalize()?;
     if canonical.starts_with(data.canonicalize()?)
         || web

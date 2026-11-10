@@ -61,3 +61,11 @@ Request Authentik reauthentication on web sign-in so the provider runs its confi
 Keep current file identities, observed revisions, tags, pending index jobs, and the FTS5 index in the same SQLite WAL database. Commit file catalog mutations and index jobs together. Use confined directory scans to discover files and periodically verify that catalog entries still exist. Treat Linux filesystem notifications as hints and reconcile after a notification overflow or an interrupted run.
 
 Keep extraction bounded and independent of inference. Read supported UTF-8 files through confined descriptors and commit a document only for the matching current path and revision. Revalidate ranked candidates before returning their metadata. Keep versioned embedding storage and the vector index interface separate for the future worker. [Keyword search and indexing](../api/search-v1.md) · [Vector index evaluation](vector-index.md)
+
+## ADR 009 · Opt in to local semantic ranking
+
+**Status** Accepted
+
+Run ONNX inference in a separate, resource-limited process. The worker accepts bounded text batches over an authenticated private HTTP connection and receives no file paths or storage access. ArcDOS reads text from its existing derived search catalog, stores versioned embeddings in private state, and revalidates semantic results against live file revisions. The worker receives only a query or text chunks.
+
+Enabling the worker adds semantic candidates to the existing Connect search and combines the keyword and semantic orderings with reciprocal rank fusion. A short inference budget and a keyword fallback keep search usable during worker restarts or failures. Background indexing never waits for inference while holding the file store lock. [Local AI setup](../deployment/local-ai.md) · [Reqwest client configuration](https://docs.rs/reqwest/0.12.28/reqwest/struct.ClientBuilder.html)

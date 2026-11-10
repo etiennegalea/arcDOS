@@ -17,6 +17,7 @@ use super::{
     Error, Result,
     catalog::{Action, Area, Catalog, Change, Identity, Intent, Location, Origin, Record},
     index::{self, Document, Job},
+    semantic::Candidate,
 };
 
 const DEFAULT_PAGE_SIZE: usize = 100;
@@ -227,38 +228,49 @@ impl Store {
         self.catalog.changes(after, page_limit(size)?)
     }
 
-    pub fn search(&self, query: &str, limit: u32) -> Result<(Vec<SearchHit>, bool)> {
-        let limit = match limit {
-            0 => 40,
-            1..=100 => limit as usize,
-            _ => return Err(Error::Invalid("invalid search result limit")),
-        };
-        let candidates = index::candidates(self.catalog.connection(), query, 4 * (limit + 1))?;
+    pub fn search(&self, expression: &str, limit: usize) -> Result<(Vec<SearchHit>, bool)> {
+        let candidates = index::candidates(self.catalog.connection(), expression, 4 * (limit + 1))?;
         let mut hits = Vec::new();
         for candidate in candidates {
-            let entry = match self.get(&candidate.id) {
-                Ok(entry) => entry,
-                Err(Error::NotFound | Error::Stale | Error::Forbidden) => continue,
-                Err(Error::Storage(error)) if omitted_entry(&error) => continue,
-                Err(error) => return Err(error),
+            let Some(entry) = self.current_search_entry(&candidate.id, &candidate.revision)? else {
+                continue;
             };
-            if entry.trashed()
-                || entry.revision != candidate.revision
-                || entry.location.path != candidate.path
-            {
+            if entry.location.path != candidate.path {
                 continue;
             }
             if hits.len() == limit {
                 return Ok((hits, true));
             }
-            let tags = index::tags(self.catalog.connection(), &entry.id)?;
-            hits.push(SearchHit {
-                entry,
-                path: candidate.path,
-                tags,
-            });
+            hits.push(self.search_hit(entry)?);
         }
         Ok((hits, false))
+    }
+
+    pub fn semantic_hits(&self, candidates: Vec<Candidate>) -> Result<Vec<SearchHit>> {
+        let mut hits = Vec::new();
+        for candidate in candidates {
+            if let Some(entry) = self.current_search_entry(&candidate.id, &candidate.revision)? {
+                hits.push(self.search_hit(entry)?);
+            }
+        }
+        Ok(hits)
+    }
+
+    fn current_search_entry(&self, id: &str, revision: &str) -> Result<Option<Resource>> {
+        match self.get(id) {
+            Ok(entry) if !entry.trashed() && entry.revision == revision => Ok(Some(entry)),
+            Ok(_) | Err(Error::NotFound | Error::Stale | Error::Forbidden) => Ok(None),
+            Err(Error::Storage(error)) if omitted_entry(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn search_hit(&self, entry: Resource) -> Result<SearchHit> {
+        Ok(SearchHit {
+            tags: index::tags(self.catalog.connection(), &entry.id)?,
+            path: entry.location.path.clone(),
+            entry,
+        })
     }
 
     pub fn set_tags(&self, id: &str, expected: &str, tags: Vec<String>) -> Result<Vec<String>> {

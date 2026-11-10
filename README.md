@@ -1,6 +1,6 @@
 # ArcDOS
 
-ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem, with planned local AI indexing inspired by FilDOS. The web workspace supports browsing, previews, file operations, and resumable transfers through the Linux file API.
+ArcDOS is an open-source, self-hosted file manager for a shared Linux filesystem. The web workspace supports browsing, previews, file operations, resumable transfers, and keyword search. An optional local AI worker adds semantic document ranking. [Local AI setup](docs/deployment/local-ai.md)
 
 ## Run locally
 

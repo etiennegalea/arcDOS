@@ -47,3 +47,7 @@ Playwright defaults to `http://127.0.0.1:8080`. Set `ARCDOS_E2E_URL` to test ano
 To run the file manager's live tests, enable the Linux file API on a disposable instance with synthetic storage and set `ARCDOS_E2E_DEV_TOKEN` to that instance's development token. The tests create, upload, move to trash, and restore their own fixtures. The health and isolated frontend tests also run against the status-only image.
 
 GitHub Actions validates schema format and compatibility, regenerates bindings, runs Rust and Svelte checks, builds the Linux image, and runs Playwright against it.
+
+## Local embedding worker
+
+Run the worker protocol tests with `python -B -m unittest worker.test_server`. These tests use synthetic inputs and run without model files. See [local AI setup](deployment/local-ai.md) to build and run the ONNX worker.

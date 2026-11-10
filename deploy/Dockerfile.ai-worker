@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1
+FROM python:3.14.2-slim-bookworm@sha256:e87711ef5c86aaeaa7031718a69db79d334d94c545c709583f651b8185870941
+WORKDIR /opt/arcdos
+COPY worker/requirements.lock ./worker/requirements.lock
+RUN pip install --no-cache-dir --only-binary=:all: -r worker/requirements.lock
+COPY worker/embeddings.py worker/server.py ./worker/
+COPY LICENSE ./LICENSE
+USER 10001:10001
+ENTRYPOINT ["python", "-B", "-m", "worker.server"]

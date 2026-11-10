@@ -16,6 +16,8 @@ Keep the session database and provider credentials private to the server. Authen
 
 Keyword search uses the same authorized router as file metadata. The indexer opens paths relative to the storage root, limits text extraction, and checks the revision before publishing an index row. Search checks live entries before returning results. The private metadata database contains extracted text and tags. Protect it and its backups like file contents.
 
+The optional embedding worker receives bounded document chunks and authorized search queries over a private connection authenticated with a separate credential. Its container has read-only model and token mounts. Keep the worker port unpublished and use trusted model artifacts. ArcDOS validates semantic results against the current file revision before returning them. Protect the embedding database and backups like other derived file data. [Local AI setup](../deployment/local-ai.md)
+
 The file workspace keeps the development token in page memory. The media worker handles only preview URLs and requests ranges through the tab that owns the preview. Preview reads are bounded when using in-memory buffers. Text and code render as escaped text, and the PDF viewer receives a validated PDF blob.
 
 The filesystem engine validates names, resolves paths relative to opened roots, and excludes symlinks, hardlinked regular files, special files, and nested mounts. The catalog and transfer directories are private to the server. All writable storage belongs on a single dedicated mount. Host processes with direct write access to that mount are trusted. In particular, a local writer can change a file during streaming or move a parent directory after the server has opened it.

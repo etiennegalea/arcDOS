@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use arcdos_filesystem::Kind;
 use arcdos_protocol::{connect::arcdos::files::v1 as service, proto::arcdos::files::v1 as pb};
@@ -10,7 +10,12 @@ use buffa_types::google::protobuf::Timestamp;
 use connectrpc::{ConnectError, Limits, RequestContext, Response, ServiceRequest, ServiceResult};
 use uuid::Uuid;
 
-use super::{Error, FileApi, Result, catalog::Change, store::Resource};
+use super::{
+    Error, FileApi, Result,
+    catalog::Change,
+    index,
+    store::{Resource, SearchHit},
+};
 
 pub(super) fn router(api: Arc<FileApi>) -> axum::Router {
     let procedures = [
@@ -58,8 +63,38 @@ impl search_service::SearchService for FileApi {
         request: ServiceRequest<'_, search_pb::SearchFilesRequest>,
     ) -> ServiceResult<search_pb::SearchFilesResponse> {
         let request = request.to_owned_message();
+        let limit = match request.limit {
+            0 => 40,
+            1..=100 => request.limit as usize,
+            _ => return Err(Error::Invalid("invalid search result limit").into()),
+        };
+        let expression = index::search_expression(&request.query)?;
+        let candidates = match &self.semantic {
+            Some(index) if !expression.is_empty() => tokio::time::timeout(
+                Duration::from_secs(1),
+                index.candidates(request.query, 2 * (limit + 1)),
+            )
+            .await
+            .ok()
+            .and_then(std::result::Result::ok)
+            .unwrap_or_default(),
+            _ => Vec::new(),
+        };
         let (hits, has_more) = self
-            .run(move |store| store.search(&request.query, request.limit))
+            .run(move |store| {
+                let (hits, has_more) = store.search(&expression, limit)?;
+                if candidates.is_empty() {
+                    return Ok((hits, has_more));
+                }
+                let semantic = match store.semantic_hits(candidates) {
+                    Ok(semantic) => semantic,
+                    Err(error) => {
+                        tracing::debug!(%error, "semantic candidates could not be verified");
+                        return Ok((hits, has_more));
+                    }
+                };
+                Ok(merge_search(hits, semantic, limit, has_more))
+            })
             .await?;
         Response::ok(search_pb::SearchFilesResponse {
             hits: hits
@@ -92,6 +127,32 @@ impl search_service::SearchService for FileApi {
             ..Default::default()
         })
     }
+}
+
+fn merge_search(
+    keyword: Vec<SearchHit>,
+    semantic: Vec<SearchHit>,
+    limit: usize,
+    keyword_has_more: bool,
+) -> (Vec<SearchHit>, bool) {
+    // Reciprocal rank fusion combines the two orderings without comparing cosine to BM25.
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    let mut ranked: Vec<(SearchHit, f64)> = Vec::new();
+    for hits in [keyword, semantic] {
+        for (rank, hit) in hits.into_iter().enumerate() {
+            let score = 1.0 / (61 + rank) as f64;
+            if let Some(&position) = positions.get(&hit.entry.id) {
+                ranked[position].1 += score;
+            } else {
+                positions.insert(hit.entry.id.clone(), ranked.len());
+                ranked.push((hit, score));
+            }
+        }
+    }
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let has_more = keyword_has_more || ranked.len() > limit;
+    let hits = ranked.into_iter().take(limit).map(|(hit, _)| hit).collect();
+    (hits, has_more)
 }
 
 #[allow(refining_impl_trait)]

@@ -1,9 +1,13 @@
+mod ai_client;
 mod catalog;
 mod http;
 mod index;
 mod observer;
 mod rpc;
+mod semantic;
 mod store;
+#[cfg(test)]
+mod tests;
 
 use std::{
     io,
@@ -106,6 +110,7 @@ impl From<TransferError> for Error {
 pub(super) struct FileApi {
     store: Arc<Mutex<Store>>,
     uploads: Uploads,
+    semantic: Option<semantic::SemanticIndex>,
     _observer: observer::Observer,
 }
 
@@ -125,6 +130,18 @@ impl FileApi {
 }
 
 pub(super) fn router(web_dir: &Path, data: &Path) -> Result<Router> {
+    let worker = ai_client::AiClient::configured(web_dir, data).unwrap_or_else(|error| {
+        tracing::warn!(%error, "Local AI disabled");
+        None
+    });
+    router_with_worker(web_dir, data, worker)
+}
+
+fn router_with_worker(
+    web_dir: &Path,
+    data: &Path,
+    worker: Option<ai_client::AiClient>,
+) -> Result<Router> {
     let data_root = data.canonicalize()?;
     if let Ok(web) = web_dir.canonicalize()
         && (web.starts_with(&data_root) || data_root.starts_with(&web))
@@ -139,6 +156,7 @@ pub(super) fn router(web_dir: &Path, data: &Path) -> Result<Router> {
     let api = Arc::new(FileApi {
         store,
         uploads,
+        semantic: worker.map(|worker| semantic::SemanticIndex::start(&data_root, worker)),
         _observer: observer,
     });
     Ok(rpc::router(api.clone()).merge(http::router(api)))
