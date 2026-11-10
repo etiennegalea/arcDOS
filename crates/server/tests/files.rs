@@ -220,16 +220,31 @@ async fn file_operations_keep_opaque_ids_and_journal_across_restart() {
         b"synthetic"
     );
     let changes = file(&app, "ListChanges", json!({"pageSize": 2})).await;
-    assert_eq!(changes["changes"][0]["kind"], "CHANGE_KIND_CREATED");
-    assert_eq!(changes["changes"][1]["kind"], "CHANGE_KIND_COPIED");
+    assert_eq!(changes["changes"].as_array().unwrap().len(), 2);
     let remaining = file(
         &app,
         "ListChanges",
         json!({"afterSequence": changes["nextSequence"]}),
     )
     .await;
-    assert_eq!(remaining["changes"].as_array().unwrap().len(), 3);
-    assert_eq!(remaining["changes"][2]["kind"], "CHANGE_KIND_RESTORED");
+    let kinds: Vec<_> = changes["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(remaining["changes"].as_array().unwrap())
+        .filter(|change| change["entryId"] != original["entryId"])
+        .map(|change| change["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "CHANGE_KIND_CREATED",
+            "CHANGE_KIND_COPIED",
+            "CHANGE_KIND_MOVED",
+            "CHANGE_KIND_TRASHED",
+            "CHANGE_KIND_RESTORED"
+        ]
+    );
 }
 
 #[tokio::test]

@@ -1,11 +1,11 @@
 use std::{path::Path, time::SystemTime};
 
-use arcdos_filesystem::Entry;
+use arcdos_filesystem::{Entry, Kind};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Error, Result, timestamp_parts};
+use super::{Error, Result, index, timestamp_parts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Area {
@@ -125,6 +125,8 @@ pub(super) enum Action {
     Trashed = 4,
     Restored = 5,
     Uploaded = 6,
+    Modified = 7,
+    Removed = 8,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -148,45 +150,75 @@ pub(super) struct Change {
 
 pub(super) struct Catalog(Connection);
 
+const SCHEMA_V1: &str = r"
+BEGIN;
+CREATE TABLE entries (
+    id TEXT PRIMARY KEY,
+    area INTEGER NOT NULL CHECK (area IN (0, 1)),
+    path TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    origin TEXT,
+    UNIQUE (area, path)
+);
+CREATE TABLE changes (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL,
+    kind INTEGER NOT NULL,
+    seconds INTEGER NOT NULL,
+    nanos INTEGER NOT NULL
+);
+CREATE TABLE pending (
+    slot INTEGER PRIMARY KEY CHECK (slot = 1),
+    intent TEXT NOT NULL
+);
+CREATE TABLE published_uploads (
+    upload_id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL
+);
+PRAGMA user_version=1;
+COMMIT;
+";
+
 impl Catalog {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         let version: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 1 {
+        if version > 2 {
             return Err(Error::Inconsistent);
         }
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
+        )?;
         if version == 0 {
-            conn.execute_batch(
-                "BEGIN;
-                 CREATE TABLE entries (
-                    id TEXT PRIMARY KEY,
-                    area INTEGER NOT NULL CHECK (area IN (0, 1)),
-                    path TEXT NOT NULL,
-                    identity TEXT NOT NULL,
-                    origin TEXT,
-                    UNIQUE (area, path)
-                 );
-                 CREATE TABLE changes (
-                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                    entry_id TEXT NOT NULL,
-                    kind INTEGER NOT NULL,
-                    seconds INTEGER NOT NULL,
-                    nanos INTEGER NOT NULL
-                 );
-                 CREATE TABLE pending (
-                    slot INTEGER PRIMARY KEY CHECK (slot = 1),
-                    intent TEXT NOT NULL
-                 );
-                 CREATE TABLE published_uploads (
-                    upload_id TEXT PRIMARY KEY,
-                    entry_id TEXT NOT NULL
-                 );
-                 PRAGMA user_version=1;
-                 COMMIT;",
-            )?;
+            conn.execute_batch(SCHEMA_V1)?;
+        }
+        if version < 2 {
+            conn.execute_batch(index::SCHEMA_V2)?;
         }
         Ok(Self(conn))
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.0
+    }
+
+    pub fn paths_after(&self, path: &str, limit: usize) -> Result<Vec<String>> {
+        let mut statement = self.0.prepare_cached(
+            "SELECT path FROM entries WHERE area=0 AND path>?1 ORDER BY path LIMIT ?2",
+        )?;
+        Ok(statement
+            .query_map(params![path, limit as i64], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn remove_missing(&self, location: &Location) -> Result<()> {
+        let tx = self.0.unchecked_transaction()?;
+        if let Some(record) = by_path(&tx, location)? {
+            record_change(&tx, &record.id, Action::Removed)?;
+        }
+        delete_subtree(&tx, location)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn by_id(&self, id: &str) -> Result<Option<Record>> {
@@ -274,11 +306,8 @@ impl Catalog {
                     .transpose()?
             ],
         )?;
-        let (seconds, nanos) = timestamp_parts(SystemTime::now());
-        tx.execute(
-            "INSERT INTO changes (entry_id, kind, seconds, nanos) VALUES (?1, ?2, ?3, ?4)",
-            params![intent.id, intent.action as i64, seconds, nanos],
-        )?;
+        index::observe(&tx, &intent.id, &intent.to, entry)?;
+        record_change(&tx, &intent.id, intent.action)?;
         if let Some(upload) = &intent.upload_id {
             tx.execute(
                 "INSERT INTO published_uploads VALUES (?1, ?2)",
@@ -322,21 +351,38 @@ impl Catalog {
     }
 }
 
+fn by_path(conn: &Connection, location: &Location) -> Result<Option<Record>> {
+    conn.query_row(
+        "SELECT id, area, path, identity, origin FROM entries WHERE area=?1 AND path=?2",
+        params![location.area as i64, location.path],
+        decode_record,
+    )
+    .optional()?
+    .transpose()
+}
+
+pub(super) fn record_change(conn: &Connection, id: &str, action: Action) -> Result<()> {
+    let (seconds, nanos) = timestamp_parts(SystemTime::now());
+    conn.execute(
+        "INSERT INTO changes (entry_id, kind, seconds, nanos) VALUES (?1, ?2, ?3, ?4)",
+        params![id, action as i64, seconds, nanos],
+    )?;
+    Ok(())
+}
+
 fn register(conn: &Connection, location: &Location, entry: &Entry) -> Result<Record> {
-    let previous = conn
-        .query_row(
-            "SELECT id, area, path, identity, origin FROM entries WHERE area=?1 AND path=?2",
-            params![location.area as i64, location.path],
-            decode_record,
-        )
-        .optional()?
-        .transpose()?;
-    if let Some(record) = previous {
+    if let Some(record) = by_path(conn, location)? {
         if record.identity.matches(entry) {
+            if index::observe(conn, &record.id, location, entry)? && entry.kind == Kind::File {
+                record_change(conn, &record.id, Action::Modified)?;
+            }
             return Ok(record);
         }
         if location.area == Area::Trash {
             return Err(Error::Inconsistent);
+        }
+        if !location.path.is_empty() {
+            record_change(conn, &record.id, Action::Removed)?;
         }
         conn.execute(
             "DELETE FROM entries WHERE area=?1 AND path=?2",
@@ -360,6 +406,10 @@ fn register(conn: &Connection, location: &Location, entry: &Entry) -> Result<Rec
             serde_json::to_string(&record.identity)?
         ],
     )?;
+    if location.area == Area::Files && !location.path.is_empty() {
+        index::observe(conn, &record.id, location, entry)?;
+        record_change(conn, &record.id, Action::Created)?;
+    }
     Ok(record)
 }
 
@@ -389,4 +439,40 @@ fn decode_record(row: &Row<'_>) -> rusqlite::Result<Result<Record>> {
             origin: origin.map(|json| serde_json::from_str(&json)).transpose()?,
         })
     })())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcdos_filesystem::Root;
+
+    #[test]
+    fn migration_preserves_entry_ids_and_journal_then_enqueues_existing_files() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("note.txt"), "fixture").unwrap();
+        let entry = Root::open(directory.path())
+            .unwrap()
+            .metadata("note.txt")
+            .unwrap();
+        let db = directory.path().join("metadata.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute(
+            "INSERT INTO entries (id, area, path, identity) VALUES ('legacy', 0, 'note.txt', ?1)",
+            [serde_json::to_string(&Identity::new(&entry)).unwrap()],
+        )
+        .unwrap();
+        record_change(&conn, "legacy", Action::Uploaded).unwrap();
+        drop(conn);
+
+        let catalog = Catalog::open(&db).unwrap();
+        let location = Location::new(Area::Files, "note.txt");
+        assert_eq!(catalog.register(&location, &entry).unwrap().id, "legacy");
+        let jobs = index::jobs(catalog.connection(), 2).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, "legacy");
+        let changes = catalog.changes(0, 10).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, Action::Uploaded as i32);
+    }
 }

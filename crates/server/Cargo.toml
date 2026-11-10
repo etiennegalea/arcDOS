@@ -22,6 +22,7 @@ arcdos-transfers = { path = "../transfers" }
 base64 = "=0.22.1"
 buffa-types.workspace = true
 futures-util = { version = "=0.3.34", default-features = false }
+notify = { version = "=8.2.0", default-features = false }
 rusqlite = { version = "=0.41.1", features = ["bundled"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
@@ -30,6 +31,7 @@ subtle = "=2.6.1"
 thiserror = "=2.0.21"
 tokio = { version = "=1.54.1", features = ["fs", "io-util", "sync"] }
 tokio-util = { version = "=0.7.20", features = ["io"] }
+unicode-normalization = "=0.1.25"
 uuid = { version = "=1.29.2", features = ["v4"] }
 
 [dev-dependencies]

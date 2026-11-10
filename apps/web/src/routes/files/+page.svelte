@@ -11,6 +11,7 @@
   import Icon from '../../lib/files/Icon.svelte';
   import Preview from '../../lib/files/Preview.svelte';
   import { loadThumbnail } from '../../lib/files/preview';
+  import SearchResults from '../../lib/files/SearchResults.svelte';
   import TransferPanel from '../../lib/files/TransferPanel.svelte';
   import { createTransferQueue, type TransferJob } from '../../lib/files/transfers';
   import './workspace.css';
@@ -29,6 +30,7 @@
 
   let token = $state('');
   let filter = $state('');
+  let search = $state('');
   let sort = $state<Sort>('default');
   let selected = $state.raw<ReadonlySet<string>>(new Set());
   let selectionAnchor = '';
@@ -41,7 +43,7 @@
   let operationBusy = $state(false);
   let notice = $state('');
   let warning = $state('');
-  let filterInput = $state<HTMLInputElement>();
+  let searchInput = $state<HTMLInputElement>();
   let fileInput = $state<HTMLInputElement>();
   let jobs = $state.raw<readonly TransferJob[]>([]);
   let activeOperation: AbortController | undefined;
@@ -52,6 +54,7 @@
   });
 
   const section = $derived(drive.location.section);
+  const searchTerm = $derived(search.trim());
   const account = $derived(drive.session?.mode === 'oidc' ? drive.session.user : undefined);
   const heading = $derived(section === 'files'
     ? drive.folder?.name || 'My files'
@@ -86,6 +89,7 @@
     untrack(() => {
       clearSelection();
       filter = '';
+      search = '';
       preview = null;
       notice = '';
       warning = '';
@@ -110,6 +114,7 @@
     queue.dispose();
     clearSelection();
     token = '';
+    search = '';
     clipboard = null;
     preview = null;
     dialog = null;
@@ -119,6 +124,7 @@
   }
 
   async function navigate(destination: Section, folderId = '') {
+    search = '';
     if (drive.location.section === destination && drive.location.folderId === folderId) return;
     const query: '' | `?${string}` = destination !== 'files' ? `?view=${destination}`
       : folderId ? `?folder=${encodeURIComponent(folderId)}` : '';
@@ -339,9 +345,10 @@
     const command = event.ctrlKey || event.metaKey;
     if (command && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      filterInput?.focus();
+      searchInput?.focus();
       return;
     }
+    if (searchTerm) return;
     if (target instanceof HTMLElement && (target.isContentEditable
       || target.closest('input, textarea, select, [role="textbox"]'))) return;
     const first = selection[0];
@@ -445,7 +452,7 @@
       </div>
     </aside>
 
-    <main class="drive-main" aria-busy={drive.loading}>
+    <main class="drive-main" aria-busy={drive.loading && !searchTerm}>
       <header class="drive-top">
         <nav class="drive-crumbs" aria-label="Breadcrumb">
           {#if section === 'files' && drive.breadcrumbs.length}
@@ -463,7 +470,8 @@
         </nav>
         <div class="drive-filter">
           <Icon name="search" size={16} />
-          <input type="search" bind:this={filterInput} bind:value={filter} aria-label="Filter files" placeholder="Filter files" />
+          <input type="search" bind:this={searchInput} bind:value={search} aria-label="Search files" placeholder="Search files"
+            maxlength="256" onkeydown={(event) => { if (event.key === 'Escape') search = ''; }} />
           <kbd>Ctrl K</kbd>
         </div>
         <button class="drive-mobile-disconnect" type="button" disabled={drive.signingOut} onclick={() => drive.signOut()}>
@@ -473,6 +481,12 @@
 
       <div class="drive-content">
         {#if drive.authError}<p class="drive-gate-error" role="alert">{drive.authError}</p>{/if}
+        {#if searchTerm}
+          <SearchResults query={searchTerm} client={drive.client} onOpen={openEntry} onClear={() => {
+            search = '';
+            searchInput?.focus();
+          }} />
+        {:else}
         <div class="drive-heading">
           <div>
             <span class="drive-eyebrow">{section === 'files' ? 'Shared storage' : 'Workspace'}</span>
@@ -516,6 +530,10 @@
             {/if}
           </div>
           <div class="drive-display">
+            <div class="drive-filter drive-folder-filter">
+              <Icon name="filter" size={15} />
+              <input type="search" bind:value={filter} aria-label="Filter files" placeholder="Filter files" />
+            </div>
             <label class="drive-sort">
               <span class="drive-sr-only">Sort files</span>
               <select bind:value={sort} aria-label="Sort files">
@@ -562,6 +580,7 @@
           <span>{filter.trim() ? `${entries.length} matching loaded items` : drive.next ? 'More items available' : 'Shared filesystem'}</span>
           <span>{drive.loadingMore ? 'Loading next page…' : 'Watching for changes'}</span>
         </footer>
+        {/if}
         {#if jobs.length}
           <TransferPanel {jobs} onCancel={queue.cancel} onRetry={queue.retry} onDismiss={queue.dismiss} />
         {/if}

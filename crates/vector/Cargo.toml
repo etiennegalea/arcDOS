@@ -1,0 +1,25 @@
+[package]
+name = "arcdos-vector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+usearch = ["dep:usearch"]
+
+[dependencies]
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+thiserror = "=2.0.21"
+usearch = { version = "=2.26.6", default-features = false, optional = true }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[[example]]
+name = "compare"
+required-features = ["usearch"]
+
+[lints]
+workspace = true

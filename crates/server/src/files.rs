@@ -1,5 +1,7 @@
 mod catalog;
 mod http;
+mod index;
+mod observer;
 mod rpc;
 mod store;
 
@@ -104,6 +106,7 @@ impl From<TransferError> for Error {
 pub(super) struct FileApi {
     store: Arc<Mutex<Store>>,
     uploads: Uploads,
+    _observer: observer::Observer,
 }
 
 impl FileApi {
@@ -130,13 +133,19 @@ pub(super) fn router(web_dir: &Path, data: &Path) -> Result<Router> {
             "web assets and data directories must be separate",
         ));
     }
-    let store = Store::open(data)?;
-    let uploads = Uploads::open(&data.join("state/transfers"))?;
+    let store = Arc::new(Mutex::new(Store::open(&data_root)?));
+    let uploads = Uploads::open(&data_root.join("state/transfers"))?;
+    let observer = observer::Observer::start(data_root.join("files"), store.clone())?;
     let api = Arc::new(FileApi {
-        store: Arc::new(Mutex::new(store)),
+        store,
         uploads,
+        _observer: observer,
     });
     Ok(rpc::router(api.clone()).merge(http::router(api)))
+}
+
+pub(super) fn rebuild_search(data: &Path) -> Result<()> {
+    Store::open(data)?.rebuild_search()
 }
 
 fn timestamp_parts(time: SystemTime) -> (i64, i32) {

@@ -20,6 +20,12 @@ pub use auth::AuthentikConfig;
 #[cfg(target_os = "linux")]
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Clear derived search rows and persist jobs to rebuild them on the next startup.
+#[cfg(target_os = "linux")]
+pub fn rebuild_search(data_dir: &Path) -> Result<(), BoxError> {
+    Ok(files::rebuild_search(data_dir)?)
+}
+
 /// Enable the Linux file and transfer routes with a separate local development token.
 #[cfg(target_os = "linux")]
 pub fn app_with_files(

@@ -161,6 +161,8 @@ pub enum ChangeKind {
     CHANGE_KIND_TRASHED = 4i32,
     CHANGE_KIND_RESTORED = 5i32,
     CHANGE_KIND_UPLOADED = 6i32,
+    CHANGE_KIND_MODIFIED = 7i32,
+    CHANGE_KIND_REMOVED = 8i32,
 }
 impl ChangeKind {
     ///Idiomatic alias for [`Self::CHANGE_KIND_UNSPECIFIED`]; `Debug` prints the variant name.
@@ -184,6 +186,12 @@ impl ChangeKind {
     ///Idiomatic alias for [`Self::CHANGE_KIND_UPLOADED`]; `Debug` prints the variant name.
     #[allow(non_upper_case_globals)]
     pub const Uploaded: Self = Self::CHANGE_KIND_UPLOADED;
+    ///Idiomatic alias for [`Self::CHANGE_KIND_MODIFIED`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Modified: Self = Self::CHANGE_KIND_MODIFIED;
+    ///Idiomatic alias for [`Self::CHANGE_KIND_REMOVED`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Removed: Self = Self::CHANGE_KIND_REMOVED;
 }
 impl ::core::default::Default for ChangeKind {
     fn default() -> Self {
@@ -286,6 +294,8 @@ impl ::buffa::Enumeration for ChangeKind {
             4i32 => ::core::option::Option::Some(Self::CHANGE_KIND_TRASHED),
             5i32 => ::core::option::Option::Some(Self::CHANGE_KIND_RESTORED),
             6i32 => ::core::option::Option::Some(Self::CHANGE_KIND_UPLOADED),
+            7i32 => ::core::option::Option::Some(Self::CHANGE_KIND_MODIFIED),
+            8i32 => ::core::option::Option::Some(Self::CHANGE_KIND_REMOVED),
             _ => ::core::option::Option::None,
         }
     }
@@ -301,6 +311,8 @@ impl ::buffa::Enumeration for ChangeKind {
             Self::CHANGE_KIND_TRASHED => "CHANGE_KIND_TRASHED",
             Self::CHANGE_KIND_RESTORED => "CHANGE_KIND_RESTORED",
             Self::CHANGE_KIND_UPLOADED => "CHANGE_KIND_UPLOADED",
+            Self::CHANGE_KIND_MODIFIED => "CHANGE_KIND_MODIFIED",
+            Self::CHANGE_KIND_REMOVED => "CHANGE_KIND_REMOVED",
         }
     }
     fn from_proto_name(name: &str) -> ::core::option::Option<Self> {
@@ -324,6 +336,12 @@ impl ::buffa::Enumeration for ChangeKind {
             "CHANGE_KIND_UPLOADED" => {
                 ::core::option::Option::Some(Self::CHANGE_KIND_UPLOADED)
             }
+            "CHANGE_KIND_MODIFIED" => {
+                ::core::option::Option::Some(Self::CHANGE_KIND_MODIFIED)
+            }
+            "CHANGE_KIND_REMOVED" => {
+                ::core::option::Option::Some(Self::CHANGE_KIND_REMOVED)
+            }
             _ => ::core::option::Option::None,
         }
     }
@@ -336,6 +354,8 @@ impl ::buffa::Enumeration for ChangeKind {
             Self::CHANGE_KIND_TRASHED,
             Self::CHANGE_KIND_RESTORED,
             Self::CHANGE_KIND_UPLOADED,
+            Self::CHANGE_KIND_MODIFIED,
+            Self::CHANGE_KIND_REMOVED,
         ]
     }
 }

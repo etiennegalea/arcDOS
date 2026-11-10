@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package arcdos.search.v1;
+
+import "arcdos/files/v1/files.proto";
+
+option java_multiple_files = true;
+option java_package = "io.arcdos.search.v1";
+
+// SearchService queries and tags entries on the shared filesystem.
+service SearchService {
+  rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse) {}
+  rpc SetTags(SetTagsRequest) returns (SetTagsResponse) {}
+}
+
+message SearchFilesRequest {
+  // Keywords to match against filenames, paths, tags, metadata, and indexed text.
+  string query = 1;
+  // Maximum number of hits to return. Omit to use the server default.
+  uint32 limit = 2;
+}
+
+message SearchHit {
+  // Live metadata and the opaque identity to use in file operations.
+  arcdos.files.v1.Entry entry = 1;
+  // A display path relative to the shared filesystem root.
+  string path = 2;
+  // Tags currently assigned to this entry.
+  repeated string tags = 3;
+}
+
+message SearchFilesResponse {
+  // Matching entries in relevance order.
+  repeated SearchHit hits = 1;
+  // True when the result limit omitted additional matches.
+  bool has_more = 2;
+}
+
+message SetTagsRequest {
+  // Opaque identity of a live file or directory.
+  string entry_id = 1;
+  // Revision of the entry the client intends to tag.
+  string expected_revision = 2;
+  // Replaces existing tags. An empty list clears them.
+  repeated string tags = 3;
+}
+
+message SetTagsResponse {
+  // Tags accepted and stored by the server.
+  repeated string tags = 1;
+}

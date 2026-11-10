@@ -168,23 +168,49 @@ impl Root {
             ) {
                 continue;
             }
-            let entry = open_under(&dir.fd()?, name, OFlags::PATH, Mode::empty())
-                .and_then(|file| Entry::from_file(&file));
-            match entry {
-                Ok(entry) => {
-                    page.insert(name.to_owned(), entry);
-                    if page.len() > limit {
-                        page.pop_last();
-                    }
+            if let Some(entry) = read_entry(&mut dir, name)? {
+                page.insert(name.to_owned(), entry);
+                if page.len() > limit {
+                    page.pop_last();
                 }
-                Err(error) if omitted_entry(&error) => {}
-                Err(error) => return Err(error),
             }
         }
         Ok(page
             .into_iter()
             .map(|(name, entry)| NamedEntry { name, entry })
             .collect())
+    }
+
+    /// Visit supported children in directory order without retaining the listing.
+    pub fn scan(
+        &self,
+        path: &str,
+        mut visit: impl FnMut(NamedEntry) -> io::Result<bool>,
+    ) -> io::Result<()> {
+        let mut dir = Dir::new(self.open_dir(path, OFlags::RDONLY)?)?;
+        while let Some(item) = dir.read() {
+            let item = item?;
+            let Ok(name) = item.file_name().to_str() else {
+                continue;
+            };
+            if !valid_name(name)
+                || !matches!(
+                    item.file_type(),
+                    FileType::RegularFile | FileType::Directory | FileType::Unknown
+                )
+            {
+                continue;
+            }
+            if let Some(entry) = read_entry(&mut dir, name)?
+                && !visit(NamedEntry {
+                    name: name.to_owned(),
+                    entry,
+                })?
+            {
+                break;
+            }
+        }
+        Ok(())
     }
 
     /// Open a singly linked regular file for reading.
@@ -365,10 +391,21 @@ fn open_under(dir: &impl AsFd, path: &str, flags: OFlags, mode: Mode) -> io::Res
     Ok(fs::openat2(dir, path, flags | OFlags::CLOEXEC, mode, CONFINED)?.into())
 }
 
-fn omitted_entry(error: &io::Error) -> bool {
+fn read_entry(dir: &mut Dir, name: &str) -> io::Result<Option<Entry>> {
+    match open_under(&dir.fd()?, name, OFlags::PATH, Mode::empty())
+        .and_then(|file| Entry::from_file(&file))
+    {
+        Ok(entry) => Ok(Some(entry)),
+        Err(error) if omitted_entry(&error) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a lookup failed because the entry is missing or outside the supported boundary.
+pub fn omitted_entry(error: &io::Error) -> bool {
     matches!(
         error.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied | io::ErrorKind::NotADirectory
     ) || [Errno::LOOP, Errno::XDEV]
         .iter()
         .any(|errno| error.raw_os_error() == Some(errno.raw_os_error()))

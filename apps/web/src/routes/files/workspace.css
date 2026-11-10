@@ -302,6 +302,8 @@ body:has(.arc-workspace) { margin: 0; }
   border-block: 1px solid var(--drive-border);
 }
 .drive-file-actions { min-width: 0; flex-wrap: wrap; }
+.drive-display { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.drive-folder-filter { width: clamp(6.8rem, 16vw, 11rem); }
 .drive-file-actions button { min-height: 1.95rem; padding: 0.24rem 0.47rem; font-size: 0.79rem; }
 .drive-file-actions button.drive-selection { background: var(--drive-selected); color: var(--drive-deep); }
 .drive-loaded { color: var(--drive-muted); white-space: nowrap; }

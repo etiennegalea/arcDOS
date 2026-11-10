@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use arcdos_filesystem::Kind;
 use arcdos_protocol::{connect::arcdos::files::v1 as service, proto::arcdos::files::v1 as pb};
+use arcdos_protocol::{
+    connect::arcdos::search::v1 as search_service, proto::arcdos::search::v1 as search_pb,
+};
 use arcdos_transfers::{TransferError, Upload, UploadSpec};
 use buffa_types::google::protobuf::Timestamp;
 use connectrpc::{ConnectError, Limits, RequestContext, Response, ServiceRequest, ServiceResult};
@@ -24,9 +27,12 @@ pub(super) fn router(api: Arc<FileApi>) -> axum::Router {
         service::TRANSFER_SERVICE_GET_UPLOAD_SPEC.procedure,
         service::TRANSFER_SERVICE_COMMIT_UPLOAD_SPEC.procedure,
         service::TRANSFER_SERVICE_CANCEL_UPLOAD_SPEC.procedure,
+        search_service::SEARCH_SERVICE_SEARCH_FILES_SPEC.procedure,
+        search_service::SEARCH_SERVICE_SET_TAGS_SPEC.procedure,
     ];
     let connect = service::FileServiceExt::register(api.clone(), connectrpc::Router::new());
-    let connect = service::TransferServiceExt::register(api, connect);
+    let connect = service::TransferServiceExt::register(api.clone(), connect);
+    let connect = search_service::SearchServiceExt::register(api, connect);
     let limits = Limits::default()
         .with_max_request_body_size(8192)
         .with_max_message_size(2 * 1024 * 1024)
@@ -42,6 +48,50 @@ pub(super) fn router(api: Arc<FileApi>) -> axum::Router {
         .fold(axum::Router::new(), |router, procedure| {
             router.route_service(procedure, connect.clone())
         })
+}
+
+#[allow(refining_impl_trait)]
+impl search_service::SearchService for FileApi {
+    async fn search_files(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, search_pb::SearchFilesRequest>,
+    ) -> ServiceResult<search_pb::SearchFilesResponse> {
+        let request = request.to_owned_message();
+        let (hits, has_more) = self
+            .run(move |store| store.search(&request.query, request.limit))
+            .await?;
+        Response::ok(search_pb::SearchFilesResponse {
+            hits: hits
+                .into_iter()
+                .map(|hit| search_pb::SearchHit {
+                    entry: to_entry(hit.entry).into(),
+                    path: hit.path,
+                    tags: hit.tags,
+                    ..Default::default()
+                })
+                .collect(),
+            has_more,
+            ..Default::default()
+        })
+    }
+
+    async fn set_tags(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, search_pb::SetTagsRequest>,
+    ) -> ServiceResult<search_pb::SetTagsResponse> {
+        let request = request.to_owned_message();
+        let tags = self
+            .run(move |store| {
+                store.set_tags(&request.entry_id, &request.expected_revision, request.tags)
+            })
+            .await?;
+        Response::ok(search_pb::SetTagsResponse {
+            tags,
+            ..Default::default()
+        })
+    }
 }
 
 #[allow(refining_impl_trait)]
@@ -361,6 +411,8 @@ fn to_change(change: Change) -> pb::Change {
         4 => pb::ChangeKind::Trashed,
         5 => pb::ChangeKind::Restored,
         6 => pb::ChangeKind::Uploaded,
+        7 => pb::ChangeKind::Modified,
+        8 => pb::ChangeKind::Removed,
         _ => pb::ChangeKind::Unspecified,
     };
     pb::Change {

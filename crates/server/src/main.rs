@@ -13,6 +13,14 @@ use tokio::{net::TcpListener, signal};
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt().json().init();
 
+    let mut arguments = env::args_os().skip(1);
+    if let Some(command) = arguments.next() {
+        if command != "rebuild-search" || arguments.next().is_some() {
+            return Err(io::Error::other("expected no arguments or rebuild-search").into());
+        }
+        return rebuild_search();
+    }
+
     let bind = match env::var("ARCDOS_BIND") {
         Ok(value) => value.parse::<SocketAddr>()?,
         Err(env::VarError::NotPresent) => SocketAddr::from(([127, 0, 0, 1], 8080)),
@@ -30,6 +38,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn rebuild_search() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let data = env::var_os("ARCDOS_DATA_DIR")
+        .ok_or_else(|| io::Error::other("ARCDOS_DATA_DIR must be set"))?;
+    arcdos_server::rebuild_search(Path::new(&data))?;
+    tracing::info!("Search index rebuild scheduled");
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn rebuild_search() -> Result<(), Box<dyn Error + Send + Sync>> {
+    Err(io::Error::other("search indexing requires Linux").into())
 }
 
 async fn configured_app(web: &Path) -> Result<axum::Router, Box<dyn Error + Send + Sync>> {

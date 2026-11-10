@@ -12,9 +12,11 @@ Open `/files/` and choose **Sign in with Authentik**. Members of `drive-users` o
 - Star files and folders to see them under **Favorites**. **Recent** tracks files opened, downloaded, or uploaded from this browser. Both views keep opaque IDs in browser preferences.
 - The workspace checks the server change journal while the page is visible and offers a refresh when it detects a change.
 
+Use **Search files** to find items across the shared drive by name, path, tag, or indexed text. Open a search result to browse its folder or preview its file. Choose **Edit tags** on a result and enter one label per line. **Filter files** narrows the loaded rows in the current folder. [Keyword search and indexing](api/search-v1.md)
+
 | Shortcut | Action |
 | --- | --- |
-| Ctrl or Command + K | Focus the filter |
+| Ctrl or Command + K | Focus global search |
 | Arrow keys, Page Up, Page Down, Home, End | Move focus within file entries |
 | Enter | Open the focused entry |
 | Space | Toggle selection for the focused entry |

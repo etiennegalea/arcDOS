@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use arcdos_filesystem::{Entry, Kind, Root, validate_name};
+use arcdos_filesystem::{Entry, Kind, Root, omitted_entry, validate_name};
 use arcdos_transfers::{StageIdentity, UploadTarget};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ use uuid::Uuid;
 use super::{
     Error, Result,
     catalog::{Action, Area, Catalog, Change, Identity, Intent, Location, Origin, Record},
+    index::{self, Document, Job},
 };
 
 const DEFAULT_PAGE_SIZE: usize = 100;
@@ -50,6 +51,12 @@ impl Resource {
 pub(super) struct Page {
     pub entries: Vec<Resource>,
     pub next: String,
+}
+
+pub(super) struct SearchHit {
+    pub entry: Resource,
+    pub path: String,
+    pub tags: Vec<String>,
 }
 
 pub(super) struct CopyJob {
@@ -218,6 +225,127 @@ impl Store {
 
     pub fn changes(&self, after: u64, size: u32) -> Result<Vec<Change>> {
         self.catalog.changes(after, page_limit(size)?)
+    }
+
+    pub fn search(&self, query: &str, limit: u32) -> Result<(Vec<SearchHit>, bool)> {
+        let limit = match limit {
+            0 => 40,
+            1..=100 => limit as usize,
+            _ => return Err(Error::Invalid("invalid search result limit")),
+        };
+        let candidates = index::candidates(self.catalog.connection(), query, 4 * (limit + 1))?;
+        let mut hits = Vec::new();
+        for candidate in candidates {
+            let entry = match self.get(&candidate.id) {
+                Ok(entry) => entry,
+                Err(Error::NotFound | Error::Stale | Error::Forbidden) => continue,
+                Err(Error::Storage(error)) if omitted_entry(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if entry.trashed()
+                || entry.revision != candidate.revision
+                || entry.location.path != candidate.path
+            {
+                continue;
+            }
+            if hits.len() == limit {
+                return Ok((hits, true));
+            }
+            let tags = index::tags(self.catalog.connection(), &entry.id)?;
+            hits.push(SearchHit {
+                entry,
+                path: candidate.path,
+                tags,
+            });
+        }
+        Ok((hits, false))
+    }
+
+    pub fn set_tags(&self, id: &str, expected: &str, tags: Vec<String>) -> Result<Vec<String>> {
+        let entry = self.live_entry(id, expected)?;
+        let tags = index::normalized_tags(tags)?;
+        index::replace_tags(self.catalog.connection(), &entry.id, &tags)?;
+        Ok(tags)
+    }
+
+    pub fn files_root(&self) -> Arc<Root> {
+        self.files.clone()
+    }
+
+    pub fn observe_path(&self, path: &str) -> Result<Option<Kind>> {
+        let location = Location::new(Area::Files, path);
+        match self.files.metadata(path) {
+            Ok(entry) => {
+                self.catalog.register(&location, &entry)?;
+                Ok(Some(entry.kind))
+            }
+            Err(error) if absent_from_catalog(&error) && !path.is_empty() => {
+                self.catalog.remove_missing(&location)?;
+                Ok(None)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn observe_batch(&self, paths: &[String]) -> Result<Vec<String>> {
+        let mut batch = Vec::with_capacity(paths.len());
+        let mut directories = Vec::new();
+        for path in paths {
+            match self.files.metadata(path) {
+                Ok(entry) => {
+                    if entry.kind == Kind::Directory {
+                        directories.push(path.clone());
+                    }
+                    batch.push((Location::new(Area::Files, path), entry));
+                }
+                Err(error)
+                    if omitted_entry(&error) || error.kind() == io::ErrorKind::InvalidInput => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        self.catalog.register_page(&batch)?;
+        Ok(directories)
+    }
+
+    pub fn prune_index(&self, after: &str, limit: usize) -> Result<Option<String>> {
+        let paths = self.catalog.paths_after(after, limit)?;
+        for path in &paths {
+            if let Err(error) = self.files.metadata(path) {
+                if absent_from_catalog(&error) || error.kind() == io::ErrorKind::InvalidInput {
+                    self.catalog
+                        .remove_missing(&Location::new(Area::Files, path))?;
+                } else if error.kind() != io::ErrorKind::PermissionDenied {
+                    return Err(error.into());
+                }
+            }
+        }
+        Ok(paths.into_iter().last())
+    }
+
+    pub fn index_jobs(&self, limit: usize) -> Result<Vec<Job>> {
+        index::jobs(self.catalog.connection(), limit)
+    }
+
+    pub fn write_index(&self, job: &Job, document: Document) -> Result<()> {
+        if self
+            .files
+            .metadata(&job.path)
+            .is_ok_and(|entry| revision(&job.id, &entry) == job.revision)
+        {
+            return index::write(self.catalog.connection(), job, document);
+        }
+        self.retry_index(job)
+    }
+
+    pub fn retry_index(&self, job: &Job) -> Result<()> {
+        if let Err(error) = self.observe_path(&job.path) {
+            tracing::debug!(%error, "could not reobserve file for search");
+        }
+        index::retry(self.catalog.connection(), job)
+    }
+
+    pub fn rebuild_search(&self) -> Result<()> {
+        index::rebuild(self.catalog.connection())
     }
 
     pub fn create_directory(
@@ -562,6 +690,11 @@ fn new_id() -> String {
     Uuid::new_v4().to_string()
 }
 
+fn absent_from_catalog(error: &io::Error) -> bool {
+    omitted_entry(error)
+        && (error.kind() != io::ErrorKind::PermissionDenied || error.raw_os_error().is_none())
+}
+
 pub(super) fn parse_id(id: &str) -> Result<String> {
     Uuid::try_parse(id)
         .map(|id| id.to_string())
@@ -584,7 +717,7 @@ fn resource(record: Record, entry: Entry, parent_id: String) -> Resource {
     }
 }
 
-fn revision(id: &str, entry: &Entry) -> String {
+pub(super) fn revision(id: &str, entry: &Entry) -> String {
     let mut hash = Sha256::new();
     hash.update(id.as_bytes());
     for value in [entry.dev, entry.ino, entry.size] {
@@ -691,9 +824,11 @@ mod tests {
         let store = Store::open(data.path()).unwrap();
         assert_eq!(store.get(&before.id).unwrap().name, "after");
         let events = store.changes(0, 10).unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].entry_id, before.id);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, Action::Created as i32);
+        assert_eq!(events[1].kind, Action::Moved as i32);
+        assert_eq!(events[1].entry_id, before.id);
         store.recover().unwrap();
-        assert_eq!(store.changes(0, 10).unwrap().len(), 1);
+        assert_eq!(store.changes(0, 10).unwrap().len(), 2);
     }
 }

@@ -1,10 +1,12 @@
 import { Code, ConnectError, createClient, type Client } from '@connectrpc/connect';
 import { createConnectTransport } from '@connectrpc/connect-web';
 import { FileService, TransferService, type Entry } from '../gen/arcdos/files/v1/files_pb';
+import { SearchService } from '../gen/arcdos/search/v1/search_pb';
 
 export interface FileClient {
   files: Client<typeof FileService>;
   transfers: Client<typeof TransferService>;
+  search: Client<typeof SearchService>;
   content(id: string, options?: RequestInit): Promise<Response>;
   patch(id: string, bytes: Blob, offset: number, signal: AbortSignal): Promise<Response>;
 }
@@ -50,6 +52,7 @@ export function createFileClient(origin: string, auth: FileAuth, onUnauthenticat
   return {
     files: createClient(FileService, transport),
     transfers: createClient(TransferService, transport),
+    search: createClient(SearchService, transport),
     content: (id, options) => fetchFile(`/api/files/v1/${encodeURIComponent(id)}/content`, options),
     patch: (id, bytes, offset, signal) => fetchFile(`/api/files/v1/uploads/${encodeURIComponent(id)}`, {
       method: 'PATCH',

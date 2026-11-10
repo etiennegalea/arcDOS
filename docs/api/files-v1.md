@@ -11,7 +11,7 @@ Use the generated clients for `arcdos.files.v1.FileService` and `arcdos.files.v1
 - Use `next_page_token` to continue the same listing. The default page size is 100 and the maximum is 500. Restart the listing if a directory change invalidates its token.
 - `CopyEntry` copies a regular file. Directory moves and trash operations preserve descendant IDs. Use `ListTrash` to discover trashed entries and `RestoreEntry` to return them to their original parent and name.
 - A stale revision returns Connect `aborted`. An occupied destination returns `already_exists` and leaves both objects intact. Refresh metadata before retrying.
-- Persist the `next_sequence` from `ListChanges` and send it as `after_sequence` on the next call. This journal records ArcDOS mutations. Listings and metadata reads consult the live filesystem. A filesystem watcher and journal reconciliation are scheduled for M5.
+- Persist the `next_sequence` from `ListChanges` and send it as `after_sequence` on the next call. This journal records ArcDOS mutations and observed external changes. Listings and metadata reads consult the live filesystem. [Keyword search and indexing](search-v1.md)
 
 ## Download
 
