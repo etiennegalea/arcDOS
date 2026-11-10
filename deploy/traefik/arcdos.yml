@@ -1,0 +1,13 @@
+http:
+  routers:
+    arcdos:
+      entryPoints: [websecure]
+      rule: 'Host(`{{ env "ARCDOS_HOSTNAME" }}`)'
+      service: arcdos
+      tls:
+        certResolver: letsencrypt
+  services:
+    arcdos:
+      loadBalancer:
+        servers:
+          - url: http://server:8080

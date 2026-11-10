@@ -1,0 +1,93 @@
+name: arcdos-production
+
+x-container: &container
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  server:
+    <<: *container
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    user: "10001:10001"
+    environment:
+      ARCDOS_DATA_DIR: /data
+      ARCDOS_PUBLIC_ORIGIN: "https://${ARCDOS_HOSTNAME:?set ARCDOS_HOSTNAME}"
+      ARCDOS_OIDC_ISSUER: "${ARCDOS_OIDC_ISSUER:?set ARCDOS_OIDC_ISSUER}"
+      ARCDOS_OIDC_CLIENT_ID: "${ARCDOS_OIDC_CLIENT_ID:?set ARCDOS_OIDC_CLIENT_ID}"
+      ARCDOS_OIDC_CLIENT_SECRET_FILE: /run/arcdos-oidc-secret
+    volumes:
+      - type: bind
+        source: "${ARCDOS_DATA_PATH:-/srv/arcdos/data}"
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCDOS_OIDC_SECRET_PATH:-/etc/arcdos/oidc-client-secret}"
+        target: /run/arcdos-oidc-secret
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [proxy]
+    cpus: 2
+    mem_limit: 1g
+    pids_limit: 256
+    stop_grace_period: 90s
+
+  proxy:
+    <<: *container
+    image: traefik:v3.7.17@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+    user: "10002:10002"
+    depends_on:
+      - server
+    environment:
+      ARCDOS_HOSTNAME: "${ARCDOS_HOSTNAME:?set ARCDOS_HOSTNAME}"
+      TRAEFIK_ENTRYPOINTS_WEB_ADDRESS: ":8080"
+      TRAEFIK_ENTRYPOINTS_WEB_HTTP_REDIRECTIONS_ENTRYPOINT_TO: ":443"
+      TRAEFIK_ENTRYPOINTS_WEBSECURE_ADDRESS: ":8443"
+      TRAEFIK_ENTRYPOINTS_WEBSECURE_TRANSPORT_RESPONDINGTIMEOUTS_READTIMEOUT: 15m
+      TRAEFIK_ENTRYPOINTS_WEBSECURE_TRANSPORT_LIFECYCLE_GRACETIMEOUT: 20s
+      TRAEFIK_ENTRYPOINTS_HEALTH_ADDRESS: "127.0.0.1:8082"
+      TRAEFIK_PING: "true"
+      TRAEFIK_PING_ENTRYPOINT: health
+      TRAEFIK_PROVIDERS_FILE_FILENAME: /etc/traefik/arcdos.yml
+      TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL: "${ARCDOS_ACME_EMAIL:?set ARCDOS_ACME_EMAIL}"
+      TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_STORAGE: /acme/acme.json
+      TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_HTTPCHALLENGE_ENTRYPOINT: web
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - type: bind
+        source: ./traefik/arcdos.yml
+        target: /etc/traefik/arcdos.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCDOS_ACME_PATH:-/etc/arcdos/acme}"
+        target: /acme
+        bind:
+          create_host_path: false
+    networks: [proxy]
+    healthcheck:
+      test: [CMD, traefik, healthcheck]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+    cpus: 1
+    mem_limit: 256m
+    pids_limit: 128
+    stop_grace_period: 25s
+
+networks:
+  proxy:

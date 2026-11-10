@@ -69,3 +69,9 @@ Keep extraction bounded and independent of inference. Read supported UTF-8 files
 Run ONNX inference in a separate, resource-limited process. The worker accepts bounded text batches over an authenticated private HTTP connection and receives no file paths or storage access. ArcDOS reads text from its existing derived search catalog, stores versioned embeddings in private state, and revalidates semantic results against live file revisions. The worker receives only a query or text chunks.
 
 Enabling the worker adds semantic candidates to the existing Connect search and combines the keyword and semantic orderings with reciprocal rank fusion. A short inference budget and a keyword fallback keep search usable during worker restarts or failures. Background indexing never waits for inference while holding the file store lock. [Local AI setup](../deployment/local-ai.md) · [Reqwest client configuration](https://docs.rs/reqwest/0.12.28/reqwest/struct.ClientBuilder.html)
+
+## ADR 010 · Terminate production HTTPS in Traefik
+
+**Status** Accepted
+
+Keep the public HTTPS entry point in a separate, non-root Traefik container using a static upstream definition. Publish only the proxy ports. Give the file server its dedicated data mount and Authentik credential, and attach the optional inference process through an internal network with a distinct credential. Use a stopped VM backup to preserve filesystem identity along with SQLite state. [Production deployment](../deployment/production.md) · [Backup and restore](../deployment/backup-restore.md)

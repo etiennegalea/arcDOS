@@ -1,0 +1,75 @@
+# Merge after compose.production.yml to enable optional local inference.
+services:
+  server:
+    environment:
+      ARCDOS_AI_WORKER_URL: http://ai-worker:8081
+      ARCDOS_AI_TOKEN_FILE: /run/arcdos-ai-token
+    volumes:
+      - type: bind
+        source: "${ARCDOS_AI_TOKEN_PATH:-/etc/arcdos/ai-token}"
+        target: /run/arcdos-ai-token
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [proxy, inference]
+
+  ai-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.ai-worker
+    user: "10001:10001"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    environment:
+      ARCDOS_AI_BIND_HOST: 0.0.0.0
+      ARCDOS_AI_TOKEN_FILE: /run/arcdos-ai-token
+      ARCDOS_AI_MODEL_PATH: /models/onnx/model.onnx
+      ARCDOS_AI_TOKENIZER_PATH: /models/tokenizer.json
+      ARCDOS_AI_MODEL: "${ARCDOS_AI_MODEL:-all-MiniLM-L6-v2@1110a243fdf4706b3f48f1d95db1a4f5529b4d41:mean-l2-v1}"
+    volumes:
+      - type: bind
+        source: "${ARCDOS_AI_TOKEN_PATH:-/etc/arcdos/ai-token}"
+        target: /run/arcdos-ai-token
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCDOS_AI_MODEL_DIR:-/srv/arcdos/models/minilm}"
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [inference]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -B
+        - -c
+        - |
+          from contextlib import closing
+          from http.client import HTTPConnection
+          from worker.server import load_token
+          with closing(HTTPConnection("127.0.0.1", 8081, timeout=2)) as client:
+              client.request("GET", "/healthz", headers={"Authorization": "Bearer " + load_token()})
+              with client.getresponse() as response:
+                  raise SystemExit(response.status != 200)
+      interval: 15s
+      timeout: 3s
+      start_period: 60s
+    cpus: 2
+    mem_limit: 768m
+    pids_limit: 64
+    stop_grace_period: 20s
+
+networks:
+  inference:
+    internal: true

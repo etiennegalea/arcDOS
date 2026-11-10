@@ -1,5 +1,7 @@
 # Deployment
 
+For an authorized instance with HTTPS on a Proxmox VM, use the [production guide](production.md). It covers Authentik, Traefik, optional inference, and [backup and restore](backup-restore.md).
+
 The development image runs in Linux containers. Build and run it with Docker Compose from the repository root.
 
 ```sh
