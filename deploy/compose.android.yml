@@ -1,0 +1,6 @@
+# Merge after compose.production.yml to authorize the Android public client.
+services:
+  server:
+    environment:
+      ARCDOS_ANDROID_ISSUER: "${ARCDOS_ANDROID_ISSUER:?set ARCDOS_ANDROID_ISSUER}"
+      ARCDOS_ANDROID_CLIENT_ID: "${ARCDOS_ANDROID_CLIENT_ID:?set ARCDOS_ANDROID_CLIENT_ID}"

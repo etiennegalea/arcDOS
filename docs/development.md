@@ -51,3 +51,9 @@ GitHub Actions validates schema format and compatibility, regenerates bindings, 
 ## Local embedding worker
 
 Run the worker protocol tests with `python -B -m unittest worker.test_server`. These tests use synthetic inputs and run without model files. See [local AI setup](deployment/local-ai.md) to build and run the ONNX worker.
+
+## Android client
+
+After generating the bindings, run `apps/android/gradlew -p apps/android :app:testDebugUnitTest :app:assembleDebug` with JDK 21 and Android SDK Platform 36. See [Android setup](android.md) for Authentik configuration and device checks.
+
+After updating an Android dependency, regenerate the lock with `apps/android/gradlew -p apps/android :app:dependencies --write-locks` and rerun the Android checks.

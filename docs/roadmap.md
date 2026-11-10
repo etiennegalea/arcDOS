@@ -64,6 +64,8 @@ Exit when a clean VM can follow the deployment guide, serve authorized users, an
 - Use Room and WorkManager for offline state, persistent transfer retries, and automatic camera backup through MediaStore.
 - Add sync cursors, revisions, checksums, tombstones, and preserved conflict copies before enabling bidirectional folders.
 
+The first increment adds the native client, one resumable upload at a time, and a durable read-only change journal. [Android setup](android.md)
+
 Exit when an Android device can browse, transfer, and back up photos across interrupted connections and conflicting changes are recoverable.
 
 ## M9 · Performance

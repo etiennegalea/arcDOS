@@ -26,3 +26,5 @@ M5 extends the private SQLite catalog with observed revisions, file tags, durabl
 M6 starts with an optional local ONNX worker on a private network. It embeds bounded batches of indexed text without access to the shared filesystem. The server fuses keyword and semantic results after validating their file revisions, and falls back to keyword results when the worker is unavailable. [FilDOS implementation and licensing review](fildos-review.md) · [Local AI setup](../deployment/local-ai.md)
 
 Future inference can propose file changes for user approval. The server owns validation, execution, and auditing.
+
+The initial M8 Android app uses the generated Connect client and the same HTTP download route as the browser. It uses Authentik's native public client and stores a per-session change cursor and tombstones in Room. [Android setup](../android.md)

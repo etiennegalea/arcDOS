@@ -75,3 +75,9 @@ Enabling the worker adds semantic candidates to the existing Connect search and 
 **Status** Accepted
 
 Keep the public HTTPS entry point in a separate, non-root Traefik container using a static upstream definition. Publish only the proxy ports. Give the file server its dedicated data mount and Authentik credential, and attach the optional inference process through an internal network with a distinct credential. Use a stopped VM backup to preserve filesystem identity along with SQLite state. [Production deployment](../deployment/production.md) · [Backup and restore](../deployment/backup-restore.md)
+
+## ADR 011 · Keep Android journal pulls tied to an unlocked session
+
+**Status** Accepted
+
+Use the generated Kotlin and Java Lite bindings against the existing file and change APIs. Store Authentik state with a Keystore-backed key and bind it to the configured origins and public client. The app keeps journal records in a bounded Room cache keyed to the current sign-in. Commit each page and its cursor in one transaction. This increment uses explicit journal pulls while the app is unlocked. Future background transfers need their own durable authorization and cancellation design. [Android setup](../android.md)
