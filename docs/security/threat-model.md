@@ -8,7 +8,11 @@ The browser uses the same origin as the API. Build outputs are public to clients
 
 ## Opt-in Linux file API
 
-Set a private data directory and a separate token file to enable file operations on Linux. The development token gates metadata, mutations, the change journal, uploads, and downloads. Serve this development instance on loopback with synthetic data. M4 replaces the development token with Authentik identity and role authorization.
+Set a private data directory and configure Authentik to enable file operations on Linux. The Axum router authorizes metadata, mutations, the change journal, uploads, and downloads. Development token mode is available for loopback testing with synthetic data and is mutually exclusive with Authentik. [Authentik setup](../deployment/authentik.md)
+
+Authentik protects login with its authentication flow. ArcDOS verifies the OIDC callback with single-use state, PKCE, nonce, and a signed ID token. The browser authenticates with an opaque session cookie. Same-origin checks and a session-bound CSRF token protect cookie-authenticated writes. Live UserInfo must confirm current account and group access. Provider failure denies file access. Revocation takes effect on subsequent requests. A request already authorized can finish streaming.
+
+Keep the session database and provider credentials private to the server. Authentik access tokens are sensitive even in backups. The secret file belongs outside both the web and data directories.
 
 The file workspace keeps the development token in page memory. The media worker handles only preview URLs and requests ranges through the tab that owns the preview. Preview reads are bounded when using in-memory buffers. Text and code render as escaped text, and the PDF viewer receives a validated PDF blob.
 
@@ -23,5 +27,3 @@ The filesystem engine validates names, resolves paths relative to opened roots, 
 | Client to upload and download endpoints | Bound resource use, check revision preconditions, verify transfer integrity, and commit uploads atomically. |
 | API to workers and indexes | Treat extracted text and model output as untrusted. Keep inference isolated. Validate proposals and audit user-approved changes. |
 | Backups and operations | Protect user data, metadata, identity records, and secrets. Test restoration against synthetic data. |
-
-Keep file-development instances private until server-side access control has passed M4's security tests.

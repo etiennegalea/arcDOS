@@ -45,3 +45,11 @@ Serialize catalog mutations in one server process. Use file identity and metadat
 Serve a prerendered `/files/` shell. Store folder identity and the active collection in the URL so browser history and direct links work without a dynamic server route. Load data through the existing Connect clients and use a virtual window for list and grid rendering. The server remains the source of truth for mutation revisions and cursor order.
 
 Keep the development token in page memory. A scoped service worker relays audio and video range requests through the tab that owns the preview. The tab performs the authenticated fetch and transfers its response stream. The worker serves no other routes and stores neither credentials nor file bytes.
+
+## ADR 007 · Keep Authentik tokens in the ArcDOS backend
+
+**Status** Accepted
+
+Use the confidential OAuth2/OIDC client in Axum for authorization code flow with S256 PKCE, single-use state, nonce, and RS256 ID token verification. Keep the provider access token in a private local SQLite session database and issue a Secure, HttpOnly, SameSite=Lax cookie containing an opaque session ID. Require exact same-origin and session CSRF verification on browser writes. The server enforces access on the entire file router, including direct streaming and change requests.
+
+Request Authentik reauthentication on web sign-in so the provider runs its configured MFA flow. Read live Authentik UserInfo for current group membership and account status on every protected request. This couples file access to Authentik availability and gives token revocation and membership changes effect on the next request. Limit browser sessions to the provider token lifetime, eight hours total, and 30 minutes idle. Logout revokes the local session and requests provider token revocation. Use a distinct, optional public client for future Android access, with confidential token introspection and the same live group check. [Authentik setup](../deployment/authentik.md)

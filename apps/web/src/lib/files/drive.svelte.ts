@@ -1,6 +1,7 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { EntryKind, type Entry } from '../gen/arcdos/files/v1/files_pb';
-import { createFileClient, fileError, requireEntry, rpcOptions, type FileClient } from './client';
+import { createFileClient, fileError, requireEntry, rpcOptions, type FileAuth, type FileClient } from './client';
+import { endSession, getSession, type Session } from './session';
 
 export type Section = 'files' | 'recent' | 'favorites' | 'trash';
 export type Layout = 'list' | 'grid';
@@ -46,6 +47,10 @@ function compare(a: bigint, b: bigint) {
 
 export class Drive {
   client = $state.raw<FileClient | null>(null);
+  session = $state.raw<Session | null>(null);
+  checkingSession = $state(true);
+  signingOut = $state(false);
+  authError = $state('');
   location = $state.raw<Location>({ section: 'files', folderId: '' });
   entries = $state.raw<Entry[]>([]);
   folder = $state.raw<Entry | null>(null);
@@ -62,7 +67,7 @@ export class Drive {
   recent = $state.raw<string[]>([]);
 
   #navigation?: AbortController;
-  #connect?: AbortController;
+  #authRequest?: AbortController;
   #subscription?: AbortController;
 
   initialize() {
@@ -106,23 +111,43 @@ export class Drive {
     }
   }
 
-  async connect(token: string): Promise<boolean> {
-    this.#connect?.abort();
+  async loadSession() {
+    this.#authRequest?.abort();
     const request = new AbortController();
-    this.#connect = request;
-    this.connecting = true;
-    this.error = '';
+    this.#authRequest = request;
+    this.checkingSession = true;
+    this.authError = '';
     try {
-      const client = createFileClient(window.location.origin, token);
+      const session = await getSession(request.signal);
+      if (request.signal.aborted) return;
+      this.session = session;
+      if (session.mode === 'oidc' && session.csrfToken) {
+        this.#activate(this.#createClient({ mode: 'oidc', csrfToken: session.csrfToken }));
+      }
+    } catch {
+      if (!request.signal.aborted) this.authError = 'Could not check your session. Try again.';
+    } finally {
+      if (!request.signal.aborted) this.checkingSession = false;
+    }
+  }
+
+  async connect(token: string): Promise<boolean> {
+    if (this.session?.mode !== 'development') return false;
+    this.#authRequest?.abort();
+    const request = new AbortController();
+    this.#authRequest = request;
+    this.connecting = true;
+    this.authError = '';
+    try {
+      const client = this.#createClient({ mode: 'development', token });
       requireEntry((await client.files.getEntry({}, rpcOptions(request.signal))).entry);
       if (request.signal.aborted) return false;
-      this.client = client;
-      this.#watch(client);
+      this.#activate(client);
       return true;
     } catch (error) {
       if (!request.signal.aborted) {
-        this.error = ConnectError.from(error).code === Code.Unimplemented
-          ? 'The file API is disabled. Start ArcDOS with its data directory and development token configured.'
+        this.authError = ConnectError.from(error).code === Code.Unauthenticated
+          ? 'The development token was rejected. Check the token and try again.'
           : fileError(error);
       }
       return false;
@@ -131,8 +156,51 @@ export class Drive {
     }
   }
 
+  async signOut() {
+    if (this.signingOut) return;
+    const session = this.session;
+    if (session?.mode !== 'oidc' || !session.csrfToken) {
+      this.disconnect();
+      return;
+    }
+    this.#authRequest?.abort();
+    const request = new AbortController();
+    this.#authRequest = request;
+    this.signingOut = true;
+    this.authError = '';
+    try {
+      await endSession(session.csrfToken, request.signal);
+      if (request.signal.aborted) return;
+      this.disconnect();
+      this.session = { mode: 'oidc' };
+    } catch {
+      if (!request.signal.aborted) this.authError = 'Could not sign out. Try again.';
+    } finally {
+      if (!request.signal.aborted) this.signingOut = false;
+    }
+  }
+
+  #createClient(auth: FileAuth): FileClient {
+    const client = createFileClient(window.location.origin, auth, () => {
+      if (this.client !== client) return;
+      this.disconnect();
+      if (auth.mode === 'oidc') {
+        this.session = { mode: 'oidc' };
+        this.authError = 'Your session ended. Sign in to continue.';
+      } else {
+        this.authError = 'The development token was rejected. Check the token and try again.';
+      }
+    });
+    return client;
+  }
+
+  #activate(client: FileClient) {
+    this.client = client;
+    this.#watch(client);
+  }
+
   disconnect() {
-    this.#connect?.abort();
+    this.#authRequest?.abort();
     this.#navigation?.abort();
     this.#subscription?.abort();
     this.client = null;
@@ -142,7 +210,10 @@ export class Drive {
     this.next = '';
     this.error = '';
     this.moreError = '';
+    this.authError = '';
+    this.checkingSession = false;
     this.connecting = false;
+    this.signingOut = false;
     this.loading = false;
     this.loadingMore = false;
     this.changesAvailable = false;

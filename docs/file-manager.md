@@ -1,6 +1,6 @@
 # File manager
 
-Enable the Linux file API and open `/files/` on the same server. Connect with its development token. The page keeps that token in memory and asks for it again after a reload. Use a private instance with synthetic data during development. [File API setup](deployment/README.md#enable-the-linux-file-api)
+Open `/files/` and choose **Sign in with Authentik**. Members of `drive-users` or `drive-admins` can use the shared filesystem. Choose **Sign out** to end the ArcDOS session. For local development, enter the development token when prompted. The page keeps that token in memory and asks for it again after a reload. [Authentik setup](deployment/authentik.md) · [Development file API](deployment/README.md#enable-the-linux-file-api)
 
 ## Browse and organize
 

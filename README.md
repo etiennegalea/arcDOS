@@ -32,6 +32,6 @@ Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). Run `docker compose down`
 
 The `crates/server` crate implements the service and serves the built frontend in `apps/web`. The `crates/protocol` crate and the generated browser bindings come from `proto/`. Start with [the architecture overview](docs/architecture/overview.md) and [the development guide](docs/development.md) for checks, binding generation, and browser tests.
 
-The default instance serves the status page and public health check. Enable the Linux file API and follow **Open file manager** to browse the shared filesystem. Enter the development token in the workspace when prompted. Authentik, search, AI, and device synchronization are tracked in the roadmap. [Local file API setup](docs/deployment/README.md#enable-the-linux-file-api) · [File manager guide](docs/file-manager.md) · [Roadmap](docs/roadmap.md)
+The default instance serves the status page and public health check. Enable the Linux file API with Authentik to let authorized users access the shared filesystem. For local development, use a private instance with synthetic data and a development token. [Authentik setup](docs/deployment/authentik.md) · [Local file API setup](docs/deployment/README.md#enable-the-linux-file-api) · [File manager guide](docs/file-manager.md) · [Roadmap](docs/roadmap.md)
 
 ArcDOS is licensed under [MIT](LICENSE).

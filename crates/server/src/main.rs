@@ -1,4 +1,11 @@
-use std::{env, error::Error, future::Future, io, net::SocketAddr, path::PathBuf};
+use std::{
+    env,
+    error::Error,
+    future::Future,
+    io,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use tokio::{net::TcpListener, signal};
 
@@ -14,26 +21,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let web_dir = env::var_os("ARCDOS_WEB_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("apps/web/build"));
-    let app = match (
-        env::var_os("ARCDOS_DATA_DIR"),
-        env::var_os("ARCDOS_DEV_TOKEN_FILE"),
-    ) {
-        (None, None) => arcdos_server::app(&web_dir),
-        #[cfg(target_os = "linux")]
-        (Some(data), Some(token)) => arcdos_server::app_with_files(
-            &web_dir,
-            std::path::Path::new(&data),
-            std::path::Path::new(&token),
-        )?,
-        #[cfg(not(target_os = "linux"))]
-        (Some(_), Some(_)) => return Err(io::Error::other("the file API requires Linux").into()),
-        _ => {
-            return Err(io::Error::other(
-                "ARCDOS_DATA_DIR and ARCDOS_DEV_TOKEN_FILE must be set together",
-            )
-            .into());
-        }
-    };
+    let app = configured_app(&web_dir).await?;
     let listener = TcpListener::bind(bind).await?;
     let shutdown = shutdown_signal()?;
 
@@ -42,6 +30,75 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
+}
+
+async fn configured_app(web: &Path) -> Result<axum::Router, Box<dyn Error + Send + Sync>> {
+    const OIDC_SETTINGS: &[&str] = &[
+        "ARCDOS_PUBLIC_ORIGIN",
+        "ARCDOS_OIDC_ISSUER",
+        "ARCDOS_OIDC_CLIENT_ID",
+        "ARCDOS_OIDC_CLIENT_SECRET_FILE",
+        "ARCDOS_ANDROID_ISSUER",
+        "ARCDOS_ANDROID_CLIENT_ID",
+    ];
+    let data = env::var_os("ARCDOS_DATA_DIR");
+    let dev = env::var_os("ARCDOS_DEV_TOKEN_FILE");
+    let oidc = OIDC_SETTINGS.iter().any(|name| env::var_os(name).is_some());
+    match (data, dev, oidc) {
+        (None, None, false) => Ok(arcdos_server::app(web)),
+        (Some(_), Some(_), true) => {
+            Err(io::Error::other("development access and Authentik are mutually exclusive").into())
+        }
+        #[cfg(target_os = "linux")]
+        (Some(data), Some(token), false) => {
+            arcdos_server::app_with_files(web, Path::new(&data), Path::new(&token))
+        }
+        #[cfg(target_os = "linux")]
+        (Some(data), None, true) => {
+            arcdos_server::app_with_authentik(web, Path::new(&data), authentik_config()?).await
+        }
+        #[cfg(not(target_os = "linux"))]
+        (Some(_), Some(_), false) | (Some(_), None, true) => {
+            Err(io::Error::other("the file API requires Linux").into())
+        }
+        _ => Err(io::Error::other(
+            "the file API requires ARCDOS_DATA_DIR and one complete access configuration",
+        )
+        .into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn authentik_config() -> io::Result<arcdos_server::AuthentikConfig> {
+    use arcdos_auth::AndroidClientConfig;
+
+    fn required(name: &str) -> io::Result<String> {
+        env::var(name)
+            .ok()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| io::Error::other(format!("{name} must be set")))
+    }
+
+    let android = if env::var_os("ARCDOS_ANDROID_ISSUER").is_some()
+        || env::var_os("ARCDOS_ANDROID_CLIENT_ID").is_some()
+    {
+        Some(AndroidClientConfig {
+            issuer: required("ARCDOS_ANDROID_ISSUER")?,
+            client_id: required("ARCDOS_ANDROID_CLIENT_ID")?,
+        })
+    } else {
+        None
+    };
+    Ok(arcdos_server::AuthentikConfig {
+        issuer: required("ARCDOS_OIDC_ISSUER")?,
+        public_origin: required("ARCDOS_PUBLIC_ORIGIN")?,
+        client_id: required("ARCDOS_OIDC_CLIENT_ID")?,
+        client_secret_file: env::var_os("ARCDOS_OIDC_CLIENT_SECRET_FILE")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| io::Error::other("ARCDOS_OIDC_CLIENT_SECRET_FILE must be set"))?,
+        android,
+    })
 }
 
 fn shutdown_signal() -> io::Result<impl Future<Output = ()>> {

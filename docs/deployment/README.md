@@ -18,11 +18,11 @@ The image runs as UID and GID 10001 and checks the Connect health RPC. Compose r
 | `docker compose start` | Start a stopped container |
 | `docker compose down` | Stop and remove the container and its Compose network |
 
-The status service requires no volumes or secrets. Proxmox, Traefik, Authentik, and backup setup will accompany the milestones that add those capabilities.
+The status service requires no volumes or secrets. To run the file manager behind HTTPS with account and group access, configure Authentik and mount the shared filesystem and confidential client secret. [Authentik setup](authentik.md)
 
 ## Enable the Linux file API
 
-Use a private test instance until Authentik is available. Linux 5.6 or newer with procfs and a local filesystem supporting directory synchronization and atomic no-replace rename is required. Mount one writable directory at `/data` so `/data/files` and `/data/state` share a mount. Use a separate read-only token file.
+Use development token mode on a private loopback test instance with synthetic data. Linux 5.6 or newer with procfs and a local filesystem supporting directory synchronization and atomic no-replace rename is required. Mount one writable directory at `/data` so `/data/files` and `/data/state` share a mount. Use a separate read-only token file.
 
 For a synthetic test on a Linux Docker host, run from the repository root.
 

@@ -8,6 +8,16 @@ Use `arcdos.<domain>.v1` packages. The planned domains are `files`, `search`, `a
 
 Use dedicated HTTP endpoints for bulk uploads and downloads. Use documented range and resume semantics. Reserve server streams for structured events or incremental answers and define cancellation, resumption, and the ordering scope per RPC.
 
+## Authentication
+
+The health RPC and static pages are public. File RPCs and HTTP file endpoints require authorization, including downloads, media ranges, previews, and the change journal.
+
+- In Authentik mode, a browser starts sign-in at `GET /auth/login`. The OIDC callback establishes a server-side session with an HttpOnly cookie. Read `GET /auth/session` for the current identity and CSRF token. Browser requests using unsafe HTTP methods require the exact same-origin `Origin` and the `X-CSRF-Token` header. This includes all Connect `POST` calls and `POST /auth/logout`.
+- When Android bearer support is configured, the native client sends `Authorization: Bearer <access-token>`. ArcDOS checks the token against the configured public client and checks the user's current group membership in Authentik.
+- For loopback development with a development token, send `Authorization: Bearer <token>` with each protected request.
+
+[Authentik configuration and session revocation](../deployment/authentik.md)
+
 ## Resource conventions
 
 - Use server-issued opaque identifiers that remain stable across supported renames and moves. Treat file names as presentation data. Keep absolute paths internal.

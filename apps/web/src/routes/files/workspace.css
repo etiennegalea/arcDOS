@@ -166,6 +166,12 @@ body:has(.arc-workspace) { margin: 0; }
   border-radius: 50%;
   background: #38734d;
 }
+.drive-account {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .drive-main, .drive-content, .drive-entries {
   display: flex;

@@ -9,22 +9,42 @@ export interface FileClient {
   patch(id: string, bytes: Blob, offset: number, signal: AbortSignal): Promise<Response>;
 }
 
-export function createFileClient(origin: string, token: string): FileClient {
-  const authorization = `Bearer ${token}`;
+export type FileAuth =
+  | { mode: 'development'; token: string }
+  | { mode: 'oidc'; csrfToken: string };
+
+export function createFileClient(origin: string, auth: FileAuth, onUnauthenticated: () => void): FileClient {
+  const credentials: RequestCredentials = auth.mode === 'oidc' ? 'same-origin' : 'omit';
+  const options: RequestInit = { credentials, mode: 'same-origin', cache: 'no-store', redirect: 'error' };
   const transport = createConnectTransport({
     baseUrl: origin,
     useBinaryFormat: true,
-    interceptors: [(next) => (request) => {
-      request.header.set('Authorization', authorization);
-      return next(request);
+    interceptors: [(next) => async (request) => {
+      authenticate(request.header, true);
+      try {
+        return await next(request);
+      } catch (error) {
+        if (ConnectError.from(error).code === Code.Unauthenticated) onUnauthenticated();
+        throw error;
+      }
     }],
-    fetch: (request, options) => fetch(request, { ...options, redirect: 'error' })
+    fetch: (request, init) => fetch(request, { ...init, ...options })
   });
 
-  function fetchFile(path: string, options: RequestInit = {}) {
-    const headers = new Headers(options.headers);
-    headers.set('Authorization', authorization);
-    return fetch(new URL(path, origin), { ...options, headers, cache: 'no-store', redirect: 'error' });
+  function authenticate(headers: Headers, csrf: boolean) {
+    headers.delete('Authorization');
+    headers.delete('X-CSRF-Token');
+    if (auth.mode === 'development') headers.set('Authorization', `Bearer ${auth.token}`);
+    else if (csrf) headers.set('X-CSRF-Token', auth.csrfToken);
+  }
+
+  async function fetchFile(path: string, init: RequestInit = {}) {
+    const headers = new Headers(init.headers);
+    const method = init.method?.toUpperCase() ?? 'GET';
+    authenticate(headers, method !== 'GET' && method !== 'HEAD');
+    const response = await fetch(new URL(path, origin), { ...init, ...options, headers });
+    if (response.status === 401) onUnauthenticated();
+    return response;
   }
 
   return {
@@ -55,7 +75,7 @@ export function fileError(error: unknown): string {
     case Code.AlreadyExists:
       return 'An item with that name already exists.';
     case Code.Unauthenticated:
-      return 'The development token was rejected. Check the token and try again.';
+      return 'Sign in to continue.';
     case Code.Unavailable:
     case Code.DeadlineExceeded:
       return 'The file service did not respond. Try again.';

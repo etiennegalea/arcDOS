@@ -1,6 +1,6 @@
 # File API
 
-The Linux M2 API is available when the server starts with both `ARCDOS_DATA_DIR` and `ARCDOS_DEV_TOKEN_FILE`. Send `Authorization: Bearer <token>` with every file, change, and transfer request. Keep this instance on a private loopback port during development.
+The Linux file API requires `ARCDOS_DATA_DIR` and an access configuration. Authentication covers file metadata, changes, transfers, and direct download or preview requests, including ranges and `HEAD`. [Authentication conventions](conventions.md#authentication) · [Authentik setup](../deployment/authentik.md)
 
 Use the generated clients for `arcdos.files.v1.FileService` and `arcdos.files.v1.TransferService`. Both services accept unary binary Protobuf or ProtoJSON. With ProtoJSON, send `Content-Type: application/json` and `Connect-Protocol-Version: 1`.
 

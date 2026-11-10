@@ -52,6 +52,7 @@
   });
 
   const section = $derived(drive.location.section);
+  const account = $derived(drive.session?.mode === 'oidc' ? drive.session.user : undefined);
   const heading = $derived(section === 'files'
     ? drive.folder?.name || 'My files'
     : sections.find((item) => item.id === section)?.label ?? 'My files');
@@ -69,11 +70,18 @@
 
   onMount(() => {
     drive.initialize();
-    return disconnect;
+    void drive.loadSession();
+    return () => {
+      drive.disconnect();
+      clearWorkspace();
+    };
   });
 
   $effect(() => {
-    if (!drive.client) return;
+    if (!drive.client) {
+      untrack(clearWorkspace);
+      return;
+    }
     const url = page.shallow?.url ?? page.url;
     untrack(() => {
       clearSelection();
@@ -96,11 +104,12 @@
     if (await drive.connect(value)) token = '';
   }
 
-  function disconnect() {
+  function clearWorkspace() {
     activeOperation?.abort();
+    activeOperation = undefined;
     queue.dispose();
-    drive.disconnect();
     clearSelection();
+    token = '';
     clipboard = null;
     preview = null;
     dialog = null;
@@ -378,16 +387,34 @@
         <div class="drive-connect-title">
           <span class="drive-eyebrow">Private workspace</span>
           <h1 id="connect-title">Connect to your files</h1>
-          <p>Enter the development access token for this ArcDOS server.</p>
+          {#if drive.checkingSession}
+            <p role="status">Checking your session…</p>
+          {:else if drive.session?.mode === 'oidc'}
+            <p>Continue to Authentik to sign in to this workspace.</p>
+          {:else if drive.session?.mode === 'development'}
+            <p>Enter the development access token for this ArcDOS server.</p>
+          {:else if drive.session?.mode === 'disabled'}
+            <p>The server has file access disabled.</p>
+          {/if}
         </div>
-        <form onsubmit={connect}>
-          <label for="drive-token">Development token</label>
-          <input id="drive-token" type="password" bind:value={token} autocomplete="off" required disabled={drive.connecting} />
-          {#if drive.error}<p class="drive-gate-error" role="alert">{drive.error}</p>{/if}
-          <button class="drive-primary" type="submit" disabled={drive.connecting || !token.trim()}>
-            {drive.connecting ? 'Connecting…' : 'Connect'}
-          </button>
-        </form>
+        {#if drive.authError}<p class="drive-gate-error" role="alert">{drive.authError}</p>{/if}
+        {#if !drive.checkingSession}
+          {#if drive.session?.mode === 'oidc'}
+            <form action="/auth/login" method="get" data-sveltekit-reload>
+              <button class="drive-primary" type="submit">Sign in with Authentik</button>
+            </form>
+          {:else if drive.session?.mode === 'development'}
+            <form onsubmit={connect}>
+              <label for="drive-token">Development token</label>
+              <input id="drive-token" type="password" bind:value={token} autocomplete="off" required disabled={drive.connecting} />
+              <button class="drive-primary" type="submit" disabled={drive.connecting || !token.trim()}>
+                {drive.connecting ? 'Connecting…' : 'Connect'}
+              </button>
+            </form>
+          {:else if !drive.session}
+            <button class="drive-primary" type="button" onclick={() => drive.loadSession()}>Check session again</button>
+          {/if}
+        {/if}
         <a class="drive-back" href={resolve('/')} data-sveltekit-reload>← Server status</a>
       </section>
     </main>
@@ -405,9 +432,16 @@
         {/each}
       </nav>
       <div class="drive-sidebar-foot">
-        <span><i></i> Connected</span>
+        {#if account}
+          <span class="drive-account" title={account.name}><i></i> {account.name}</span>
+          <span>{account.roles.includes('drive-admins') ? 'Administrator' : 'Member'}</span>
+        {:else}
+          <span><i></i> Development session</span>
+        {/if}
         <a href={resolve('/')} data-sveltekit-reload>Server status</a>
-        <button type="button" onclick={disconnect}>Disconnect</button>
+        <button type="button" disabled={drive.signingOut} onclick={() => drive.signOut()}>
+          {drive.signingOut ? 'Signing out…' : account ? 'Sign out' : 'Disconnect'}
+        </button>
       </div>
     </aside>
 
@@ -432,10 +466,13 @@
           <input type="search" bind:this={filterInput} bind:value={filter} aria-label="Filter files" placeholder="Filter files" />
           <kbd>Ctrl K</kbd>
         </div>
-        <button class="drive-mobile-disconnect" type="button" onclick={disconnect}>Disconnect</button>
+        <button class="drive-mobile-disconnect" type="button" disabled={drive.signingOut} onclick={() => drive.signOut()}>
+          {drive.signingOut ? 'Signing out…' : account ? 'Sign out' : 'Disconnect'}
+        </button>
       </header>
 
       <div class="drive-content">
+        {#if drive.authError}<p class="drive-gate-error" role="alert">{drive.authError}</p>{/if}
         <div class="drive-heading">
           <div>
             <span class="drive-eyebrow">{section === 'files' ? 'Shared storage' : 'Workspace'}</span>

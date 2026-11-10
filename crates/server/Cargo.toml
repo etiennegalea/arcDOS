@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 arcdos-protocol.workspace = true
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 connectrpc = { workspace = true, features = ["axum"] }
 tokio = { version = "=1.54.1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 tower-http = { version = "=0.7.1", features = ["fs"] }
@@ -16,6 +16,7 @@ tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "json"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+arcdos-auth = { path = "../auth" }
 arcdos-filesystem = { path = "../filesystem" }
 arcdos-transfers = { path = "../transfers" }
 base64 = "=0.22.1"
@@ -35,6 +36,9 @@ uuid = { version = "=1.29.2", features = ["v4"] }
 buffa.workspace = true
 tempfile = "=3.27.0"
 tower = { version = "=0.5.3", features = ["util"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+rsa = { version = "=0.9.10", features = ["sha2"] }
 
 [lints]
 workspace = true

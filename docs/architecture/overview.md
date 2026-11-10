@@ -19,6 +19,8 @@ The M2 Linux file API uses the filesystem as the source of truth. A private SQLi
 
 The M3 workspace at `/files/` loads paged file metadata, renders virtual list and grid views, and uses the HTTP routes for transfers and previews. Browser history stores the active collection and folder ID. The browser checks the server change journal while the page is visible.
 
-Later milestones add Authentik identity and authorization, indexed metadata and FTS5, and device synchronization.
+M4 adds Authentik authorization code flow with PKCE and server-side browser sessions. The Axum file router checks current group access with Authentik before serving metadata, mutations, transfers, or content. The web uses a same-origin session cookie and CSRF token. An optional separate public client supplies bearer tokens for future Android integration. [Authentik setup](../deployment/authentik.md)
+
+Later milestones add indexed metadata and FTS5, AI inference, and device synchronization.
 
 The AI worker will deploy independently and receive bounded inference and extraction jobs. Its availability must have no effect on authentication, file operations, basic search, or sync. Model output can propose file changes for user approval. The server owns validation, execution, and auditing.
