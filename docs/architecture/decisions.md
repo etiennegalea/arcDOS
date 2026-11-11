@@ -81,3 +81,9 @@ Keep the public HTTPS entry point in a separate, non-root Traefik container usin
 **Status** Accepted
 
 Use the generated Kotlin and Java Lite bindings against the existing file and change APIs. Store Authentik state with a Keystore-backed key and bind it to the configured origins and public client. The app keeps journal records in a bounded Room cache keyed to the current sign-in. Commit each page and its cursor in one transaction. This increment uses explicit journal pulls while the app is unlocked. Future background transfers need their own durable authorization and cancellation design. [Android setup](../android.md)
+
+## ADR 012 · Run self-hosted Authentik in its own Compose project
+
+**Status** Accepted
+
+Start and administer Authentik independently so its administrator and OIDC provider can be configured before ArcDOS starts. Persist identity data in dedicated volumes. Publish the Authentik setup endpoint on loopback and optionally join Traefik to an ingress network shared with the Authentik server. Keep the worker and database off that ingress network. ArcDOS connects to the provider through its HTTPS issuer, which also supports an existing Authentik installation. [Authentik setup](../deployment/authentik.md) · [Production deployment](../deployment/production.md)

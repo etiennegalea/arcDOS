@@ -1,0 +1,11 @@
+# Merge after compose.production.yml to route to the local Authentik project.
+services:
+  proxy:
+    environment:
+      AUTHENTIK_HOSTNAME: "${AUTHENTIK_HOSTNAME:?set AUTHENTIK_HOSTNAME}"
+    networks: [proxy, authentik-proxy]
+
+networks:
+  authentik-proxy:
+    external: true
+    name: arcdos-authentik-proxy

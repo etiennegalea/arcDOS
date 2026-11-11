@@ -71,6 +71,21 @@ jobs:
           npm run check
       - name: Build the Linux container
         run: docker build -f deploy/Dockerfile.server -t arcdos:ci .
+      - name: Validate Authentik Compose configuration
+        env:
+          AUTHENTIK_POSTGRES_PASSWORD: fixture-password
+          AUTHENTIK_SECRET_KEY: fixture-secret
+          AUTHENTIK_HOSTNAME: auth.example.com
+          ARCDOS_HOSTNAME: drive.example.com
+          ARCDOS_ACME_EMAIL: ops@example.com
+          ARCDOS_OIDC_ISSUER: https://auth.example.com/application/o/arcdos-web/
+          ARCDOS_OIDC_CLIENT_ID: fixture-client
+          ARCDOS_ANDROID_ISSUER: https://auth.example.com/application/o/arcdos-android/
+          ARCDOS_ANDROID_CLIENT_ID: fixture-android
+        run: |
+          docker compose -f deploy/compose.authentik.yml config --quiet
+          docker compose -f deploy/compose.production.yml -f deploy/compose.authentik-proxy.yml \
+            -f deploy/compose.ai.yml -f deploy/compose.android.yml config --quiet
       - name: Start the container
         run: |
           mkdir "$RUNNER_TEMP/arcdos-data"

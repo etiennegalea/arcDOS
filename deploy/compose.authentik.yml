@@ -1,0 +1,55 @@
+name: arcdos-authentik
+
+x-authentik: &authentik
+  image: ghcr.io/goauthentik/server:2026.8.5
+  environment:
+    AUTHENTIK_SECRET_KEY: "${AUTHENTIK_SECRET_KEY:?set AUTHENTIK_SECRET_KEY}"
+    AUTHENTIK_POSTGRESQL__HOST: postgresql
+    AUTHENTIK_POSTGRESQL__NAME: authentik
+    AUTHENTIK_POSTGRESQL__USER: authentik
+    AUTHENTIK_POSTGRESQL__PASSWORD: "${AUTHENTIK_POSTGRES_PASSWORD:?set AUTHENTIK_POSTGRES_PASSWORD}"
+  depends_on:
+    postgresql:
+      condition: service_healthy
+  healthcheck:
+    # Keep the image's health probe and allow time for initial migrations.
+    start_period: 10m
+  restart: unless-stopped
+  shm_size: 512mb
+  volumes:
+    - authentik-data:/data
+
+services:
+  postgresql:
+    image: docker.io/library/postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: "${AUTHENTIK_POSTGRES_PASSWORD:?set AUTHENTIK_POSTGRES_PASSWORD}"
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -d "$${POSTGRES_DB}" -U "$${POSTGRES_USER}"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    volumes:
+      - database:/var/lib/postgresql/data
+
+  authentik-server:
+    <<: *authentik
+    command: server
+    ports:
+      - "127.0.0.1:${AUTHENTIK_HTTP_PORT:-9000}:9000"
+    networks: [default, proxy]
+
+  authentik-worker:
+    <<: *authentik
+    command: worker
+
+volumes:
+  authentik-data:
+  database:
+
+networks:
+  proxy:
+    name: arcdos-authentik-proxy

@@ -1,6 +1,6 @@
 # Deploy on a Proxmox VM
 
-The production Compose stack runs ArcDOS and Traefik on a dedicated Linux VM. It expects an existing Authentik installation on a separate HTTPS origin. The optional ONNX worker runs on an internal network with access to its model files and its own credential. Only Traefik publishes ports. The [loopback development stack](README.md) uses a separate Compose project.
+The production Compose stack runs ArcDOS and Traefik on a dedicated Linux VM. Authentik serves a separate HTTPS origin and can run on the same VM in its own Compose project. The optional ONNX worker runs on an internal network with access to its model files and its own credential. Traefik publishes the web ports. The [loopback development stack](README.md) uses a separate Compose project.
 
 ## Prepare the VM
 
@@ -25,7 +25,7 @@ sudo install -d -o 10002 -g 10002 -m 0700 /etc/arcdos/acme
 
 ## Configure Authentik and DNS
 
-- Use your own hostnames in place of `drive.example.com` and `auth.example.com`. The browser and the ArcDOS container must resolve and reach Authentik over HTTPS. If Authentik needs to be installed first, follow its installation and proxy guides. [Authentik installation](https://docs.goauthentik.io/install-config/install/docker-compose/) · [Authentik reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
+- Use your own hostnames in place of `drive.example.com` and `auth.example.com`. The browser and the ArcDOS container must resolve and reach Authentik over HTTPS. For a fresh instance, [start the Authentik Compose project and set the administrator password](authentik.md#install-and-start-authentik-with-compose) before starting ArcDOS.
 - Configure the confidential web provider, live group claims, MFA, and strict `https://drive.example.com/auth/callback` redirect URI. Save the provider's client secret in `/etc/arcdos/oidc-client-secret`, owned by UID and GID 10001 with mode `0400`. Use a private editor or your secret manager to write it. [ArcDOS provider setup](authentik.md)
 - Point the ArcDOS DNS record at the Traefik VM or its NAT address. For the included Let's Encrypt HTTP challenge, TCP 80 must reach Traefik from the internet. Allow TCP 443 for client HTTPS. Publish an AAAA record only if IPv6 works end to end. Restrict management ports at the Proxmox firewall or your network boundary. [Traefik ACME HTTP challenge](https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/acme/#httpchallenge) · [Docker firewall behavior](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
 
@@ -38,16 +38,38 @@ ARCDOS_OIDC_ISSUER=https://auth.example.com/application/o/arcdos-web/
 ARCDOS_OIDC_CLIENT_ID=replace-with-web-client-id
 ```
 
+## Route local Authentik through Traefik
+
+If you run the Authentik Compose project on this VM and want the bundled Traefik to serve its HTTPS origin, point the Authentik DNS record at the same Traefik address as the ArcDOS record. Add `AUTHENTIK_HOSTNAME=auth.example.com` to `/etc/arcdos/production.env`. Use the same hostname in `ARCDOS_OIDC_ISSUER`. When setting up the provider over the SSH tunnel, form the issuer from the final HTTPS origin and application slug, as in the example above.
+
+Use this function in place of the base `arcdos` function below. Start the proxy first so the provider's HTTPS discovery endpoint is available before ArcDOS starts.
+
+```sh
+arcdos() {
+  sudo docker compose --env-file /etc/arcdos/production.env \
+    -f deploy/compose.production.yml -f deploy/compose.authentik-proxy.yml "$@"
+}
+
+arcdos config --quiet
+arcdos up --detach --no-deps proxy
+curl --fail --silent --show-error \
+  https://auth.example.com/application/o/arcdos-web/.well-known/openid-configuration
+```
+
+Run the discovery check after DNS resolves and Traefik has obtained a certificate. Confirm the returned issuer matches `ARCDOS_OIDC_ISSUER`. Keep the Authentik project running and include the overlay in subsequent ArcDOS Compose commands. If you use an existing HTTPS endpoint for Authentik, proceed with the base stack below.
+
 ## Start and verify
 
-Run from the repository root. Use the same Compose files and environment file for subsequent operations.
+Run from the repository root. If you defined `arcdos` with the Authentik overlay above, keep that function and skip this base definition. Use the same Compose files and environment file for subsequent operations.
 
 ```sh
 arcdos() {
   sudo docker compose --env-file /etc/arcdos/production.env \
     -f deploy/compose.production.yml "$@"
 }
+```
 
+```sh
 arcdos config --quiet
 arcdos up --build --detach --wait --wait-timeout 120
 arcdos ps
@@ -71,7 +93,7 @@ Open `https://drive.example.com/files/`, sign in with an authorized MFA-enrolled
 
 Prepare the pinned model and verify its checksums using [local AI setup](local-ai.md#prepare-the-worker). Use only its model preparation steps because Compose manages the worker container and network here. Generate a distinct `/etc/arcdos/ai-token` with a random 32-byte value encoded as hexadecimal. Give UID and GID 10001 read access with mode `0400`. Keep the model files readable by UID 10001 under `/srv/arcdos/models/minilm`.
 
-Use the overlay for each stack operation after enabling inference.
+Use the overlay for each stack operation after enabling inference. If using the Authentik overlay, keep it in the file list alongside the AI overlay, including when disabling inference.
 
 ```sh
 arcdos() {

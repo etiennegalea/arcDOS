@@ -2,6 +2,43 @@
 
 ArcDOS uses Authentik as its OpenID Connect provider. In this example the browser reaches ArcDOS at `https://drive.example.com` and Authentik at `https://auth.example.com`. Use your own hostnames. Configure HTTPS for both services and route the complete ArcDOS origin through the reverse proxy to the ArcDOS server. Keep the upstream port private, preserve the request paths, and keep the callback query parameters out of access logs. ArcDOS must reach the Authentik hostname over HTTPS with a publicly trusted certificate.
 
+## Install and start Authentik with Compose
+
+If you already have Authentik, continue to [users, groups, and live claims](#users-groups-and-live-claims). For a fresh installation, the [Authentik Compose project](../../deploy/compose.authentik.yml) runs the server, worker, and PostgreSQL independently of ArcDOS. Run these commands from the repository root on a Linux host with Docker Compose v2 and OpenSSL. [Authentik Compose documentation](https://docs.goauthentik.io/install-config/install/docker-compose/)
+
+```sh
+sudo install -d -m 0700 /etc/arcdos/authentik
+sudo sh -ec '
+  umask 077
+  set -C
+  db_password=$(openssl rand -hex 32)
+  secret_key=$(openssl rand -hex 60)
+  printf "AUTHENTIK_POSTGRES_PASSWORD=%s\nAUTHENTIK_SECRET_KEY=%s\n" \
+    "$db_password" "$secret_key" > /etc/arcdos/authentik/compose.env
+'
+
+authentik() {
+  sudo docker compose --env-file /etc/arcdos/authentik/compose.env \
+    -f deploy/compose.authentik.yml "$@"
+}
+
+authentik config --quiet
+authentik up --detach --wait --wait-timeout 900
+authentik ps
+```
+
+The first start can take several minutes while Authentik applies database migrations. Keep the generated file and reuse it on later starts. The setup command refuses to overwrite it. Authentik stores data and PostgreSQL state in named volumes. Back up both volumes and the environment file. Use `authentik stop` and `authentik start` for maintenance. If startup times out, check `authentik logs --tail 100 postgresql authentik-server authentik-worker`. [Authentik backup and restore](https://docs.goauthentik.io/sys-mgmt/ops/backup-restore/)
+
+The server listens on `127.0.0.1:9000` on the Docker host. If that port is in use, set `AUTHENTIK_HTTP_PORT` in `compose.env` and adjust the host-side port below. For first-time setup from your workstation, forward the port over SSH and keep the session open.
+
+```sh
+ssh -N -L 127.0.0.1:9000:127.0.0.1:9000 user@your-server
+```
+
+Open [Authentik on the forwarded port](http://127.0.0.1:9000/). The first browser load can show a startup screen while the worker imports the default flows, even after the containers are healthy. Authentik then starts the setup flow from its home page. Set the `akadmin` password and use the final HTTPS Authentik origin if prompted for a base URL. Complete this step before exposing the Authentik hostname through a reverse proxy. [Authentik 2026.8 setup](https://version-2026-8.goauthentik.io/install-config/install/docker-compose/#access-authentik)
+
+For HTTPS on the same host, use the [bundled Traefik overlay](production.md#route-local-authentik-through-traefik), or point an existing host reverse proxy for `auth.example.com` at `http://127.0.0.1:9000`. A containerized proxy can join `arcdos-authentik-proxy` and use `http://authentik-server:9000`. Preserve the original host and HTTPS scheme. Use the final HTTPS origin for discovery and passkey enrollment. [Authentik reverse proxy settings](https://docs.goauthentik.io/install-config/reverse-proxy/)
+
 ## Users, groups, and live claims
 
 Create two groups in Authentik under **Directory → Groups**. Assign people directly to the groups they need.

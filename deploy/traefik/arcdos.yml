@@ -6,8 +6,22 @@ http:
       service: arcdos
       tls:
         certResolver: letsencrypt
+    {{ with env "AUTHENTIK_HOSTNAME" }}
+    authentik:
+      entryPoints: [websecure]
+      rule: 'Host(`{{ . }}`)'
+      service: authentik
+      tls:
+        certResolver: letsencrypt
+    {{ end }}
   services:
     arcdos:
       loadBalancer:
         servers:
           - url: http://server:8080
+    {{ if env "AUTHENTIK_HOSTNAME" }}
+    authentik:
+      loadBalancer:
+        servers:
+          - url: http://authentik-server:9000
+    {{ end }}
