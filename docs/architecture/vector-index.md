@@ -19,6 +19,8 @@ The benchmark uses a fixed seed to generate 384-dimensional vectors around 64 sy
 
 Single-caller measurements from the pinned Rust 1.99.1 Bookworm container on an Intel Core i7-2600K host.
 
+These M5 measurements used the original query generator. The M9 benchmark seeds its queries independently so both corpus sizes use identical queries, and it includes an insertion-order exact-index optimization. [M9 measurements](../performance.md)
+
 | Vectors | Exact build | Exact p95 | USearch build | USearch p95 | USearch recall@10 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 10,000 | 32.99 ms | 8.66 ms | 3.76 s | 235.22 µs | 99.9% |

@@ -338,18 +338,29 @@ impl Store {
         index::jobs(self.catalog.connection(), limit)
     }
 
-    pub fn write_index(&self, job: &Job, document: Document) -> Result<()> {
-        if self
-            .files
-            .metadata(&job.path)
-            .is_ok_and(|entry| revision(&job.id, &entry) == job.revision)
-        {
-            return index::write(self.catalog.connection(), job, document);
+    pub fn write_index_batch(&self, documents: Vec<(Job, Option<Document>)>) -> Result<()> {
+        let mut ready = Vec::with_capacity(documents.len());
+        let mut retry = Vec::new();
+        for (job, document) in documents {
+            if let Some(document) = document
+                && self
+                    .files
+                    .metadata(&job.path)
+                    .is_ok_and(|entry| revision(&job.id, &entry) == job.revision)
+            {
+                ready.push((job, document));
+            } else {
+                retry.push(job);
+            }
         }
-        self.retry_index(job)
+        index::write_batch(self.catalog.connection(), &ready)?;
+        for job in retry {
+            self.retry_index(&job)?;
+        }
+        Ok(())
     }
 
-    pub fn retry_index(&self, job: &Job) -> Result<()> {
+    fn retry_index(&self, job: &Job) -> Result<()> {
         if let Err(error) = self.observe_path(&job.path) {
             tracing::debug!(%error, "could not reobserve file for search");
         }
@@ -812,6 +823,65 @@ fn private_directory(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn index_batch_rolls_back_on_failure_and_rechecks_extracted_revisions() {
+        let data = tempfile::tempdir().unwrap();
+        let store = Store::open(data.path()).unwrap();
+        for name in ["first.txt", "second.txt"] {
+            fs::write(
+                data.path().join("files").join(name),
+                "original batch content",
+            )
+            .unwrap();
+            store.observe_path(name).unwrap();
+        }
+        let read_batch = || {
+            store
+                .index_jobs(24)
+                .unwrap()
+                .into_iter()
+                .map(|job| {
+                    let document = Document::read(&store.files_root(), &job).unwrap();
+                    (job, document)
+                })
+                .collect()
+        };
+        let conn = store.catalog.connection();
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_dequeue BEFORE DELETE ON index_jobs
+             WHEN old.entry_id=(SELECT max(entry_id) FROM index_jobs)
+             BEGIN SELECT RAISE(ABORT, 'synthetic batch failure'); END;",
+        )
+        .unwrap();
+        assert!(store.write_index_batch(read_batch()).is_err());
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM file_search", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(store.index_jobs(24).unwrap().len(), 2);
+        conn.execute_batch("DROP TRIGGER fail_dequeue").unwrap();
+
+        let batch: Vec<_> = read_batch();
+        let changed_path = batch[1].0.path.clone();
+        let old_revision = batch[1].0.revision.clone();
+        fs::write(
+            data.path().join("files").join(&changed_path),
+            "replacement batch content after extraction",
+        )
+        .unwrap();
+        store.write_index_batch(batch).unwrap();
+        let original = index::search_expression("original").unwrap();
+        assert_eq!(store.search(&original, 10).unwrap().0.len(), 1);
+        let pending = store.index_jobs(24).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].path, changed_path);
+        assert_ne!(pending[0].revision, old_revision);
+        store.write_index_batch(read_batch()).unwrap();
+        let replacement = index::search_expression("replacement").unwrap();
+        assert_eq!(store.search(&replacement, 10).unwrap().0.len(), 1);
+        assert!(store.index_jobs(24).unwrap().is_empty());
+    }
 
     #[test]
     fn recovers_a_rename_that_reached_disk_before_the_catalog() {

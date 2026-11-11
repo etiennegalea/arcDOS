@@ -11,7 +11,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "bench:scroll": "playwright test --config playwright.bench.config.ts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.17.0",

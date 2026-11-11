@@ -308,15 +308,21 @@ export class Drive {
 
     const poll = async () => {
       if (signal.aborted) return;
+      let delay = 4000;
       try {
         if (document.visibilityState === 'visible') {
           const result = await client.files.listChanges({ afterSequence: sequence, pageSize: 500 }, rpcOptions(signal));
           if (signal.aborted) return;
-          if (caughtUp && result.changes.length) {
+          const fullPage = result.changes.length === 500;
+          if (result.nextSequence < sequence || (fullPage && result.nextSequence === sequence)) {
+            throw new Error('The server returned a change cursor that did not advance.');
+          }
+          const liveChanges = caughtUp && result.changes.length > 0;
+          if (liveChanges || (!caughtUp && !fullPage)) {
             const folder = this.folder;
             const location = this.location;
             if (!folder || location.section !== 'files') {
-              this.changesAvailable = true;
+              if (liveChanges) this.changesAvailable = true;
             } else {
               let changed = false;
               try {
@@ -334,13 +340,14 @@ export class Drive {
           }
           if (!signal.aborted) {
             sequence = result.nextSequence;
-            caughtUp ||= result.changes.length < 500;
+            caughtUp ||= !fullPage;
+            if (fullPage) delay = 0;
           }
         }
       } catch {
         // Keep the last acknowledged sequence so a failed poll can catch up.
       } finally {
-        if (!signal.aborted) timer = window.setTimeout(poll, 4000);
+        if (!signal.aborted) timer = window.setTimeout(poll, delay);
       }
     };
     signal.addEventListener('abort', () => window.clearTimeout(timer), { once: true });

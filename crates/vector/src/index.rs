@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap, hash_map::Entry},
+    collections::{BinaryHeap, HashSet},
 };
 
 use crate::{Error, MAX_NEIGHBORS, Result, check_dimensions, vector_norm};
@@ -26,7 +26,9 @@ pub trait VectorIndex {
 
 pub struct ExactIndex {
     dimensions: usize,
-    vectors: HashMap<u64, Vec<f32>>,
+    // Search scans in insertion order. The key set is only used to detect duplicates.
+    vectors: Vec<(u64, Vec<f32>)>,
+    keys: HashSet<u64>,
 }
 
 impl ExactIndex {
@@ -34,7 +36,8 @@ impl ExactIndex {
         check_dimensions(dimensions)?;
         Ok(Self {
             dimensions,
-            vectors: HashMap::new(),
+            vectors: Vec::new(),
+            keys: HashSet::new(),
         })
     }
 }
@@ -50,23 +53,21 @@ impl VectorIndex for ExactIndex {
 
     fn add(&mut self, key: u64, vector: &[f32]) -> Result<()> {
         let vector = normalized(vector, self.dimensions)?;
-        match self.vectors.entry(key) {
-            Entry::Occupied(_) => Err(Error::Invalid("duplicate vector key")),
-            Entry::Vacant(entry) => {
-                entry.insert(vector);
-                Ok(())
-            }
+        if !self.keys.insert(key) {
+            return Err(Error::Invalid("duplicate vector key"));
         }
+        self.vectors.push((key, vector));
+        Ok(())
     }
 
     fn search(&self, query: &[f32], limit: usize) -> Result<Vec<Neighbor>> {
         check_limit(limit)?;
         let query = normalized(query, self.dimensions)?;
         let mut best = BinaryHeap::with_capacity(limit);
-        for (&key, vector) in &self.vectors {
+        for (key, vector) in &self.vectors {
             let similarity = vector.iter().zip(&query).map(|(a, b)| a * b).sum::<f32>();
             let candidate = Ranked(Neighbor {
-                key,
+                key: *key,
                 distance: 1.0 - similarity.clamp(-1.0, 1.0),
             });
             if best.len() < limit {

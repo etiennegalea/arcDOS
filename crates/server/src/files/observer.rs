@@ -216,14 +216,16 @@ impl Worker {
     fn index_batch(&self) -> Result<bool> {
         let jobs = self.with_store(|store| store.index_jobs(INDEX_BATCH))?;
         let work = jobs.len() == INDEX_BATCH;
+        let mut documents = Vec::with_capacity(jobs.len());
         for job in jobs {
             if self.stopping() {
                 break;
             }
-            match Document::read(&self.root, &job) {
-                Ok(Some(document)) => self.with_store(|store| store.write_index(&job, document))?,
-                Ok(None) | Err(_) => self.with_store(|store| store.retry_index(&job))?,
-            }
+            let document = Document::read(&self.root, &job).ok().flatten();
+            documents.push((job, document));
+        }
+        if !documents.is_empty() {
+            self.with_store(|store| store.write_index_batch(documents))?;
         }
         Ok(work)
     }

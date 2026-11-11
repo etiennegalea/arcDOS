@@ -74,4 +74,6 @@ Exit when an Android device can browse, transfer, and back up photos across inte
 - Measure cold and warm latency, memory, throughput, browser frame rate, and impact of background inference.
 - Target cached 100-entry lists below 50 ms p95, indexed filename search below 100 ms p95, 100,000-vector retrieval below 200 ms p95 excluding embedding time, and 60 FPS desktop scrolling.
 
+[Reproduce the Linux, browser, and vector measurements](performance.md).
+
 Exit when results are reproducible, regressions are checked in CI, and each optimization is supported by profiling and before-and-after measurements.

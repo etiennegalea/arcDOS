@@ -427,7 +427,7 @@ mod tests {
             store.observe_path("notes.txt").unwrap();
             let job = store.index_jobs(1).unwrap().pop().unwrap();
             let text = Document::read(&store.files_root(), &job).unwrap().unwrap();
-            store.write_index(&job, text).unwrap();
+            store.write_index_batch(vec![(job, Some(text))]).unwrap();
         };
         index_document();
 

@@ -1,0 +1,39 @@
+name: Performance smoke checks
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/performance.yml
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - crates/**
+      - scripts/benchmark-linux.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/performance.yml
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - crates/**
+      - scripts/benchmark-linux.py
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo build --locked --bin arcdos-server
+      - run: >-
+          python3 -B scripts/benchmark-linux.py --server target/debug/arcdos-server
+          --files 120 --samples 8 --clients 2 --transfer-mib 1
+      - run: >-
+          cargo run --locked --release -p arcdos-vector --features usearch
+          --example compare -- 1000 90

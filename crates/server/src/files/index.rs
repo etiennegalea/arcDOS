@@ -22,6 +22,13 @@ const MAX_QUERY_TERMS: usize = 12;
 const MAX_TAGS: usize = 24;
 const MAX_TAG_CHARS: usize = 48;
 
+// SQLite preserves CROSS JOIN order. Start at the ready queue so LIMIT stops
+// the ordered index scan without walking and sorting the live catalog.
+const READY_JOBS: &str = "SELECT j.entry_id, e.path, s.revision
+    FROM index_jobs j CROSS JOIN entries e CROSS JOIN search_state s
+    WHERE j.ready_at <= ?1 AND e.area=0 AND e.id=j.entry_id AND s.entry_id=j.entry_id
+    ORDER BY j.ready_at, j.entry_id LIMIT ?2";
+
 pub(super) const SCHEMA_V2: &str = r"
 BEGIN IMMEDIATE;
 CREATE TABLE search_state (
@@ -201,13 +208,7 @@ pub(super) fn observe(
 }
 
 pub(super) fn jobs(conn: &Connection, limit: usize) -> Result<Vec<Job>> {
-    let mut query = conn.prepare_cached(
-        "SELECT j.entry_id, e.path, s.revision
-         FROM index_jobs j JOIN entries e ON e.id=j.entry_id
-         JOIN search_state s ON s.entry_id=j.entry_id
-         WHERE j.ready_at <= ?1 AND e.area=0
-         ORDER BY j.ready_at, j.entry_id LIMIT ?2",
-    )?;
+    let mut query = conn.prepare_cached(READY_JOBS)?;
     Ok(query
         .query_map(params![now(), limit as i64], |row| {
             Ok(Job {
@@ -232,41 +233,47 @@ pub(super) fn retry(conn: &Connection, job: &Job) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn write(conn: &Connection, job: &Job, document: Document) -> Result<()> {
+pub(super) fn write_batch(conn: &Connection, documents: &[(Job, Document)]) -> Result<()> {
+    if documents.is_empty() {
+        return Ok(());
+    }
     let tx = conn.unchecked_transaction()?;
-    let rowid: Option<i64> = tx
-        .query_row(
+    {
+        let mut find_document = tx.prepare_cached(
             "SELECT s.document_id FROM search_state s JOIN entries e ON e.id=s.entry_id
-         WHERE s.entry_id=?1 AND e.area=0 AND e.path=?2 AND s.revision=?3",
-            params![job.id, job.path, job.revision],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if let Some(rowid) = rowid {
-        let tags = tags(&tx, &job.id)?.join(" ");
-        tx.execute(
+             WHERE s.entry_id=?1 AND e.area=0 AND e.path=?2 AND s.revision=?3",
+        )?;
+        let mut replace_document = tx.prepare_cached(
             "INSERT OR REPLACE INTO file_search (rowid, name, path, tags, content, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
+        )?;
+        let mut mark_indexed = tx.prepare_cached(
+            "UPDATE search_state SET indexed_revision=?2, indexed_path=?3, content_sha256=?4
+             WHERE document_id=?1",
+        )?;
+        let mut remove_job = tx.prepare_cached("DELETE FROM index_jobs WHERE entry_id=?1")?;
+        for (job, document) in documents {
+            let rowid: Option<i64> = find_document
+                .query_row(params![job.id, job.path, job.revision], |row| row.get(0))
+                .optional()?;
+            let Some(rowid) = rowid else { continue };
+            let tags = tags(&tx, &job.id)?.join(" ");
+            replace_document.execute(params![
                 rowid,
                 nfc(&document.name).as_ref(),
                 nfc(&job.path).as_ref(),
                 nfc(&tags).as_ref(),
                 document.content,
                 nfc(&document.metadata).as_ref()
-            ],
-        )?;
-        tx.execute(
-            "UPDATE search_state SET indexed_revision=?2, indexed_path=?3, content_sha256=?4
-             WHERE document_id=?1",
-            params![
+            ])?;
+            mark_indexed.execute(params![
                 rowid,
                 job.revision,
                 job.path,
                 document.content_hash.as_ref().map(|hash| hash.as_slice())
-            ],
-        )?;
-        tx.execute("DELETE FROM index_jobs WHERE entry_id=?1", [&job.id])?;
+            ])?;
+            remove_job.execute([&job.id])?;
+        }
     }
     tx.commit()?;
     Ok(())
@@ -397,4 +404,57 @@ fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::files::catalog::Catalog;
+
+    #[test]
+    fn ready_jobs_use_the_ordered_queue_and_skip_future_and_trashed_entries() {
+        let catalog = Catalog::open(Path::new(":memory:")).unwrap();
+        let conn = catalog.connection();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {READY_JOBS}"))
+            .unwrap()
+            .query_map(params![0, 24], |row| row.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(plan[0].contains("index_jobs_ready"), "{plan:?}");
+        assert!(
+            !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+            "{plan:?}"
+        );
+        for (id, area, ready) in [
+            ("later", 0, 0),
+            ("first", 0, -1),
+            ("third", 0, 1),
+            ("trash", 1, -2),
+            ("future", 0, i64::MAX),
+        ] {
+            conn.execute(
+                "INSERT INTO entries (id, area, path, identity) VALUES (?1, ?2, ?1, '{}')",
+                params![id, area],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO search_state (entry_id, revision) VALUES (?1, 'revision')",
+                [id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO index_jobs (entry_id, ready_at) VALUES (?1, ?2)",
+                params![id, ready],
+            )
+            .unwrap();
+        }
+        let selected: Vec<_> = jobs(conn, 2)
+            .unwrap()
+            .into_iter()
+            .map(|job| job.id)
+            .collect();
+        assert_eq!(selected, ["first", "later"]);
+    }
 }

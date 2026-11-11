@@ -8,13 +8,20 @@ const QUERIES: usize = 100;
 const TOP: usize = 10;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let count = std::env::args()
-        .nth(1)
+    let mut args = std::env::args().skip(1);
+    let count = args
+        .next()
         .map(|arg| arg.parse())
         .transpose()?
         .unwrap_or(10_000);
     if !(TOP..=100_000).contains(&count) {
         return Err("use between 10 and 100000 synthetic vectors".into());
+    }
+    let minimum_recall: Option<f64> = args.next().map(|arg| arg.parse()).transpose()?;
+    if minimum_recall.is_some_and(|percent| !(0.0..=100.0).contains(&percent))
+        || args.next().is_some()
+    {
+        return Err("usage: compare [vector count] [minimum recall percent (0–100)]".into());
     }
     let mut rng = Generator(0xf157_41cb_93fa_7c19);
     let centers: Vec<Vec<f32>> = (0..CLUSTERS)
@@ -23,12 +30,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vectors: Vec<_> = (0..count)
         .map(|i| rng.near(&centers[i % CLUSTERS]))
         .collect();
+    let mut query_rng = Generator(0x37e7_1ba3_b491_2f5d);
     let queries: Vec<_> = (0..QUERIES)
-        .map(|i| rng.near(&centers[i % CLUSTERS]))
+        .map(|i| query_rng.near(&centers[i % CLUSTERS]))
         .collect();
 
     let exact = measure(ExactIndex::new(DIMENSIONS)?, &vectors, &queries)?;
     let approximate = measure(UsearchIndex::new(DIMENSIONS, count)?, &vectors, &queries)?;
+    if exact
+        .results
+        .iter()
+        .chain(&approximate.results)
+        .any(|hits| !valid_hits(hits, count))
+    {
+        return Err("an index returned incomplete or invalid neighbors".into());
+    }
     let recall: usize = exact
         .results
         .iter()
@@ -40,23 +56,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .count()
         })
         .sum();
+    let recall_percent = recall as f64 * 100.0 / (QUERIES * TOP) as f64;
 
     println!("{count} vectors · {DIMENSIONS} dimensions · {QUERIES} queries · top {TOP}");
     println!(
-        "Exact   build {:>9.2?} · p95 {:>9.2?}",
-        exact.build, exact.p95
+        "Exact   build {:>9.2?} · first {:>9.2?} · warm p95 {:>9.2?}",
+        exact.build, exact.first, exact.p95
     );
     println!(
-        "USearch build {:>9.2?} · p95 {:>9.2?} · recall {:.1}%",
-        approximate.build,
-        approximate.p95,
-        recall as f64 * 100.0 / (QUERIES * TOP) as f64
+        "USearch build {:>9.2?} · first {:>9.2?} · warm p95 {:>9.2?} · recall {recall_percent:.1}%",
+        approximate.build, approximate.first, approximate.p95
     );
+    if let Some(minimum) = minimum_recall
+        && recall_percent < minimum
+    {
+        return Err(format!("recall {recall_percent:.1}% is below the {minimum:.1}% floor").into());
+    }
     Ok(())
+}
+
+fn valid_hits(hits: &[Neighbor], count: usize) -> bool {
+    hits.len() == TOP
+        && hits.iter().enumerate().all(|(position, hit)| {
+            hit.key < count as u64
+                && (0.0..=2.0).contains(&hit.distance)
+                && !hits[..position]
+                    .iter()
+                    .any(|previous| previous.key == hit.key)
+        })
 }
 
 struct Sample {
     build: Duration,
+    first: Duration,
     p95: Duration,
     results: Vec<Vec<Neighbor>>,
 }
@@ -71,7 +103,10 @@ fn measure(
         index.add(i as u64, vector)?;
     }
     let build = started.elapsed();
-    for query in &queries[..10] {
+    let started = Instant::now();
+    index.search(&queries[0], TOP)?;
+    let first = started.elapsed();
+    for query in &queries[1..10] {
         index.search(query, TOP)?;
     }
     let mut timings = Vec::with_capacity(queries.len());
@@ -86,6 +121,7 @@ fn measure(
     let p95 = timings[(95 * timings.len()).div_ceil(100) - 1];
     Ok(Sample {
         build,
+        first,
         p95,
         results,
     })
